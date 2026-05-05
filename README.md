@@ -1,4 +1,4 @@
-# ⚽ Pelada Selva - Administração de Pelada
+# ⚽ Aplicativo destinado para administração de peladas
 
 Um aplicativo web completo para gerenciamento de partidas de futebol amador (peladas), rastreamento de estatísticas individuais, premiações e geração de rankings automáticos. Desenvolvido para transformar o futebol do fim de semana em uma experiência profissional.
 
