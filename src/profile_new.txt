@@ -1,0 +1,131 @@
+  if (showProfile) {
+    const profilePlayer = registeredPlayers.find(p => p.id === currentUser?.jogadorId);
+    const profileStats = profilePlayer ? getPlayerStats(profilePlayer.name) : null;
+
+    let comparisonUI = null;
+    if (profilePlayer && comparePlayerId) {
+      const player2 = registeredPlayers.find(p => p.id === comparePlayerId);
+      if (player2) {
+        const stats1 = profileStats;
+        const stats2 = getPlayerStats(player2.name);
+        const renderRow = (label, v1, v2, suffix = '') => {
+          const val1 = parseFloat(v1);
+          const val2 = parseFloat(v2);
+          const win1 = val1 > val2;
+          const win2 = val2 > val1;
+          const maxVal = Math.max(val1, val2, 0.001);
+          return (
+            <div className="compare-row" key={label}>
+              <div className="compare-val left">
+                <div className={win1 ? 'winner-text' : ''}>{v1}{suffix}</div>
+                <div className="stat-bar-bg"><div className="stat-bar-fill left" style={{ width: `${(val1 / maxVal) * 100}%`, opacity: win1 ? 1 : 0.4 }}></div></div>
+              </div>
+              <div className="compare-label">{label}</div>
+              <div className="compare-val right">
+                <div className={win2 ? 'winner-text' : ''}>{v2}{suffix}</div>
+                <div className="stat-bar-bg"><div className="stat-bar-fill" style={{ width: `${(val2 / maxVal) * 100}%`, opacity: win2 ? 1 : 0.4 }}></div></div>
+              </div>
+            </div>
+          );
+        };
+        comparisonUI = (
+          <div className="compare-section animated">
+            <div className="compare-header-grid">
+              <div className="compare-player-info"><PlayerAvatar playerName={profilePlayer.name} size={48} /><span style={{ fontSize: 13, fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>{profilePlayer.name}</span></div>
+              <div className="vs-badge">VS</div>
+              <div className="compare-player-info"><PlayerAvatar playerName={player2.name} size={48} /><span style={{ fontSize: 13, fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>{player2.name}</span></div>
+            </div>
+            <div className="compare-stats-table">
+              {renderRow('Peladas', stats1.peladasJogadas, stats2.peladasJogadas)}
+              {renderRow('Gols', stats1.totalGoals, stats2.totalGoals)}
+              {renderRow('Assistências', stats1.totalAssists, stats2.totalAssists)}
+              {renderRow('G+A Total', stats1.totalGoals + stats1.totalAssists, stats2.totalGoals + stats2.totalAssists)}
+              {renderRow('Média Gols', stats1.goalAvg, stats2.goalAvg)}
+              {renderRow('Nota Média', (profilePlayer.media_nota || 0).toFixed(2), (player2.media_nota || 0).toFixed(2))}
+              {renderRow('Win Rate', stats1.winRate, stats2.winRate, '%')}
+            </div>
+          </div>
+        );
+      }
+    }
+
+    return (
+      <div className="app-container" style={{ padding: 24, maxWidth: 600, margin: '0 auto', justifyContent: 'center' }}>
+        <header className="header" style={{ marginBottom: 24 }}>
+          <button className="back-btn" onClick={() => setShowProfile(false)}>
+            <ChevronLeft size={28} />
+          </button>
+          <h1>Meu Perfil</h1>
+        </header>
+
+        <div className="card animated" style={{ padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24 }}>
+          <div style={{ position: 'relative' }}>
+            <PlayerAvatar playerName={currentUser?.name} userId={currentUser?.id} size={120} />
+            {isUploading && (
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span className="spinner">⏳</span>
+              </div>
+            )}
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <h2 style={{ margin: 0 }}>{currentUser?.name}</h2>
+            <p style={{ color: 'var(--text-muted)', margin: 0, marginTop: 4 }}>{currentUser?.email}</p>
+            {profilePlayer && (
+              <div style={{ marginTop: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', backgroundColor: 'rgba(255,255,255,0.05)', padding: '8px 16px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Jogador:</span>
+                <strong style={{ color: 'var(--text-main)', fontSize: 16 }}>{profilePlayer.name}</strong>
+                <button onClick={handleEditLinkedPlayerName} className="icon-btn" style={{ color: 'var(--primary)', padding: 4, marginLeft: 4 }}><Pencil size={16} /></button>
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 16 }}>
+            <label className="btn-primary" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Camera size={16} /> Alterar Foto
+              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarUpload} />
+            </label>
+            {currentUser?.avatar && <button className="btn-primary" style={{ backgroundColor: 'transparent', border: '1px solid var(--danger)', color: 'var(--danger)' }} onClick={removeAvatar}>Remover Foto</button>}
+          </div>
+        </div>
+
+        {profileStats && (
+          <>
+            <div className="card animated" style={{ padding: 24, marginTop: 16 }}>
+              <h3 style={{ fontSize: 16, color: 'var(--primary)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}><Trophy size={18} /> Minhas Estatísticas</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: 16 }}>
+                {[
+                  { icon: '🏟️', label: 'Peladas', value: profileStats.peladasJogadas },
+                  { icon: '⚽', label: 'Gols', value: profileStats.totalGoals },
+                  { icon: '🎯', label: 'Assistências', value: profileStats.totalAssists },
+                  { icon: '📊', label: 'Média Gols', value: profileStats.goalAvg },
+                  { icon: '📈', label: 'Média Assist.', value: profileStats.assistAvg },
+                  { icon: '⭐', label: 'Nota Média', value: profilePlayer?.media_nota?.toFixed(2) || '0.00' },
+                ].map((s, i) => (
+                  <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '14px 8px', borderRadius: '12px', backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <span style={{ fontSize: 20 }}>{s.icon}</span>
+                    <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-main)' }}>{s.value}</span>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{s.label}</span>
+                  </div>
+                ))}
+              </div>
+              {renderPlayerBadges(profilePlayer.name, false)}
+            </div>
+
+            <div className="card animated" style={{ padding: 24, marginTop: 16, marginBottom: 40 }}>
+              <h3 style={{ fontSize: 16, color: 'var(--primary)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}><Users size={18} /> Comparar Estatísticas</h3>
+              <div style={{ position: 'relative', marginBottom: 20 }}>
+                <select className="input-field" value={comparePlayerId || ''} onChange={(e) => setComparePlayerId(e.target.value)} style={{ width: '100%', paddingRight: '40px' }}>
+                  <option value="">Selecionar jogador para comparar...</option>
+                  {registeredPlayers.filter(p => p.id !== profilePlayer.id).sort((a, b) => a.name.localeCompare(b.name)).map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                {comparePlayerId && <button onClick={() => setComparePlayerId(null)} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: 'var(--text-muted)' }}><LogOut size={16} /></button>}
+              </div>
+              {comparisonUI}
+            </div>
+          </>
+        )}
+        {renderAvatarModal()}
+      </div>
+    );
+  }
