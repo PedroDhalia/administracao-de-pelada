@@ -82,65 +82,70 @@ function App() {
   };
 
   useEffect(() => {
-    const dbRef = ref(db, 'sessions');
-    const unsubscribeSessions = onValue(dbRef, (snapshot) => {
-      console.log("Sessions data received");
-      const data = snapshot.val();
-      if (data) {
-        // Ensure data is an array
-        const dataArray = Array.isArray(data) ? data : Object.values(data);
-        setSessions(dataArray);
-      } else {
-        const saved = localStorage.getItem('selva_data_v2');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (parsed && parsed.length > 0) {
-            set(dbRef, parsed);
-            setSessions(parsed);
+    let timeout;
+    try {
+      const dbRef = ref(db, 'sessions');
+      const unsubscribeSessions = onValue(dbRef, (snapshot) => {
+        console.log("Sessions data received");
+        const data = snapshot.val();
+        if (data) {
+          const dataArray = Array.isArray(data) ? data : Object.values(data);
+          setSessions(dataArray);
+        } else {
+          const saved = localStorage.getItem('selva_data_v2');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed && parsed.length > 0) {
+              set(dbRef, parsed);
+              setSessions(parsed);
+            } else {
+              setSessions([]);
+            }
           } else {
             setSessions([]);
           }
-        } else {
-          setSessions([]);
         }
-      }
+        setIsLoaded(true);
+      }, (error) => {
+        console.error("Firebase Sessions Error:", error);
+        setIsLoaded(true);
+      });
+
+      const playersRef = ref(db, 'players');
+      const unsubscribePlayers = onValue(playersRef, (snapshot) => {
+        const val = snapshot.val();
+        setRegisteredPlayers(Array.isArray(val) ? val : (val ? Object.values(val) : []));
+      }, (error) => console.error("Firebase Players Error:", error));
+
+      const usersRef = ref(db, 'users');
+      const unsubscribeUsers = onValue(usersRef, (snapshot) => {
+        const val = snapshot.val();
+        setUsers(Array.isArray(val) ? val : (val ? Object.values(val) : []));
+      }, (error) => console.error("Firebase Users Error:", error));
+
+      const goleirosRef = ref(db, 'goleiros');
+      const unsubscribeGoleiros = onValue(goleirosRef, (snapshot) => {
+        const val = snapshot.val();
+        setRegisteredGoleiros(Array.isArray(val) ? val : (val ? Object.values(val) : []));
+      }, (error) => console.error("Firebase Goleiros Error:", error));
+
+      // Fallback timeout to ensure app loads even if Firebase hangs
+      timeout = setTimeout(() => {
+        setIsLoaded(true);
+        console.warn("Firebase connection timeout - loading app anyway");
+      }, 4000);
+
+      return () => {
+        if (timeout) clearTimeout(timeout);
+        unsubscribeSessions();
+        unsubscribePlayers();
+        unsubscribeUsers();
+        unsubscribeGoleiros();
+      };
+    } catch (err) {
+      console.error("Critical initialization error:", err);
       setIsLoaded(true);
-    }, (error) => {
-      console.error("Firebase Sessions Error:", error);
-      setIsLoaded(true);
-    });
-
-    const playersRef = ref(db, 'players');
-    const unsubscribePlayers = onValue(playersRef, (snapshot) => {
-      const val = snapshot.val();
-      setRegisteredPlayers(Array.isArray(val) ? val : (val ? Object.values(val) : []));
-    }, (error) => console.error("Firebase Players Error:", error));
-
-    const usersRef = ref(db, 'users');
-    const unsubscribeUsers = onValue(usersRef, (snapshot) => {
-      const val = snapshot.val();
-      setUsers(Array.isArray(val) ? val : (val ? Object.values(val) : []));
-    }, (error) => console.error("Firebase Users Error:", error));
-
-    const goleirosRef = ref(db, 'goleiros');
-    const unsubscribeGoleiros = onValue(goleirosRef, (snapshot) => {
-      const val = snapshot.val();
-      setRegisteredGoleiros(Array.isArray(val) ? val : (val ? Object.values(val) : []));
-    }, (error) => console.error("Firebase Goleiros Error:", error));
-
-    // Fallback timeout to ensure app loads even if Firebase hangs
-    const timeout = setTimeout(() => {
-      setIsLoaded(true);
-      console.warn("Firebase connection timeout - loading app anyway");
-    }, 8000);
-
-    return () => {
-      clearTimeout(timeout);
-      unsubscribeSessions();
-      unsubscribePlayers();
-      unsubscribeUsers();
-      unsubscribeGoleiros();
-    };
+    }
   }, []);
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
