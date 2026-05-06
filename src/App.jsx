@@ -31,6 +31,7 @@ const CURRENT_FORMULA_VERSION = 3; // Increment this when formula changes
 
 function App() {
   const [sessions, setSessions] = useState([]);
+  console.log("App Render", { isLoaded: typeof isLoaded !== 'undefined' ? isLoaded : 'pending', sessionsCount: sessions.length });
   const [registeredPlayers, setRegisteredPlayers] = useState([]);
   const [registeredGoleiros, setRegisteredGoleiros] = useState([]);
   const [users, setUsers] = useState([]);
@@ -84,9 +85,12 @@ function App() {
   useEffect(() => {
     const dbRef = ref(db, 'sessions');
     const unsubscribeSessions = onValue(dbRef, (snapshot) => {
+      console.log("Sessions data received");
       const data = snapshot.val();
       if (data) {
-        setSessions(data);
+        // Ensure data is an array
+        const dataArray = Array.isArray(data) ? data : Object.values(data);
+        setSessions(dataArray);
       } else {
         const saved = localStorage.getItem('selva_data_v2');
         if (saved) {
@@ -102,24 +106,37 @@ function App() {
         }
       }
       setIsLoaded(true);
+    }, (error) => {
+      console.error("Firebase Sessions Error:", error);
+      setIsLoaded(true);
     });
 
     const playersRef = ref(db, 'players');
     const unsubscribePlayers = onValue(playersRef, (snapshot) => {
-      setRegisteredPlayers(snapshot.val() || []);
-    });
+      const val = snapshot.val();
+      setRegisteredPlayers(Array.isArray(val) ? val : (val ? Object.values(val) : []));
+    }, (error) => console.error("Firebase Players Error:", error));
 
     const usersRef = ref(db, 'users');
     const unsubscribeUsers = onValue(usersRef, (snapshot) => {
-      setUsers(snapshot.val() || []);
-    });
+      const val = snapshot.val();
+      setUsers(Array.isArray(val) ? val : (val ? Object.values(val) : []));
+    }, (error) => console.error("Firebase Users Error:", error));
 
     const goleirosRef = ref(db, 'goleiros');
     const unsubscribeGoleiros = onValue(goleirosRef, (snapshot) => {
-      setRegisteredGoleiros(snapshot.val() || []);
-    });
+      const val = snapshot.val();
+      setRegisteredGoleiros(Array.isArray(val) ? val : (val ? Object.values(val) : []));
+    }, (error) => console.error("Firebase Goleiros Error:", error));
+
+    // Fallback timeout to ensure app loads even if Firebase hangs
+    const timeout = setTimeout(() => {
+      setIsLoaded(true);
+      console.warn("Firebase connection timeout - loading app anyway");
+    }, 8000);
 
     return () => {
+      clearTimeout(timeout);
       unsubscribeSessions();
       unsubscribePlayers();
       unsubscribeUsers();
