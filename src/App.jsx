@@ -44,6 +44,7 @@ function App() {
 
   const [isLoaded, setIsLoaded] = useState(false);
   const [dataSynced, setDataSynced] = useState(false);
+  const [dbError, setDbError] = useState(null);
 
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [showPlayersScreen, setShowPlayersScreen] = useState(false);
@@ -87,6 +88,7 @@ function App() {
       const dbRef = ref(db, 'sessions');
       const unsubscribeSessions = onValue(dbRef, (snapshot) => {
         console.log("Sessions data received");
+        setDbError(null);
         const data = snapshot.val();
         if (data) {
           const dataArray = Array.isArray(data) ? data : Object.values(data);
@@ -108,6 +110,7 @@ function App() {
         setIsLoaded(true);
       }, (error) => {
         console.error("Firebase Sessions Error:", error);
+        setDbError(error.message);
         setIsLoaded(true);
       });
 
@@ -115,19 +118,28 @@ function App() {
       const unsubscribePlayers = onValue(playersRef, (snapshot) => {
         const val = snapshot.val();
         setRegisteredPlayers(Array.isArray(val) ? val : (val ? Object.values(val) : []));
-      }, (error) => console.error("Firebase Players Error:", error));
+      }, (error) => {
+        console.error("Firebase Players Error:", error);
+        setDbError(error.message);
+      });
 
       const usersRef = ref(db, 'users');
       const unsubscribeUsers = onValue(usersRef, (snapshot) => {
         const val = snapshot.val();
         setUsers(Array.isArray(val) ? val : (val ? Object.values(val) : []));
-      }, (error) => console.error("Firebase Users Error:", error));
+      }, (error) => {
+        console.error("Firebase Users Error:", error);
+        setDbError(error.message);
+      });
 
       const goleirosRef = ref(db, 'goleiros');
       const unsubscribeGoleiros = onValue(goleirosRef, (snapshot) => {
         const val = snapshot.val();
         setRegisteredGoleiros(Array.isArray(val) ? val : (val ? Object.values(val) : []));
-      }, (error) => console.error("Firebase Goleiros Error:", error));
+      }, (error) => {
+        console.error("Firebase Goleiros Error:", error);
+        setDbError(error.message);
+      });
 
       // Fallback timeout to ensure app loads even if Firebase hangs
       timeout = setTimeout(() => {
@@ -1826,6 +1838,15 @@ function App() {
             <img src="/logo.png" alt="Logo" style={{ width: 80, height: 80, marginBottom: 16 }} />
             <h2 style={{ color: 'var(--primary)', margin: 0 }}>{authMode === 'login' ? 'Entrar' : 'Cadastro'}</h2>
           </div>
+
+          {dbError && (
+            <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--danger)', borderRadius: '8px', padding: '12px', marginBottom: '20px', fontSize: '13px', color: 'var(--danger)', textAlign: 'center' }}>
+              <p style={{ margin: 0, fontWeight: 'bold' }}>Erro de conexão com o banco:</p>
+              <p style={{ margin: '4px 0 0 0', fontSize: '11px', opacity: 0.8 }}>{dbError}</p>
+              <p style={{ margin: '8px 0 0 0', fontSize: '11px' }}>Verifique as Regras de Segurança no Console do Firebase.</p>
+            </div>
+          )}
+
           {authMode === 'login' ? (
             <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <input name="email" type="email" placeholder="Email" required className="input-field" style={{ marginBottom: 0 }} />
