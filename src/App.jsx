@@ -31,7 +31,6 @@ const CURRENT_FORMULA_VERSION = 3; // Increment this when formula changes
 
 function App() {
   const [sessions, setSessions] = useState([]);
-  console.log("App Render", { isLoaded: typeof isLoaded !== 'undefined' ? isLoaded : 'pending', sessionsCount: sessions.length });
   const [registeredPlayers, setRegisteredPlayers] = useState([]);
   const [registeredGoleiros, setRegisteredGoleiros] = useState([]);
   const [users, setUsers] = useState([]);
