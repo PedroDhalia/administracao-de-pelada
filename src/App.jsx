@@ -1168,7 +1168,8 @@ function App() {
       const teamCleanSheets = cleanSheetsByTeam[t.id] || 0;
       
       pList.forEach(p => {
-        const rp = registeredPlayers.find(reg => reg.name.trim().toLowerCase() === p.name.trim().toLowerCase());
+        const pName = p.name || '';
+        const rp = registeredPlayers.find(reg => (reg.name || '').trim().toLowerCase() === pName.trim().toLowerCase());
         const isZagueiro = rp?.posicao === 'Zagueiro';
         
         allPlayers.push({
@@ -1208,10 +1209,10 @@ function App() {
   const getMonthlyHighlights = () => {
     const grouped = {};
     sessions.forEach(s => {
-      if (!s.date) return;
+      if (!s.date || typeof s.date !== 'string') return;
       const parts = s.date.split('/');
       if (parts.length === 3) {
-        const monthYear = `${parts[1].padStart(2, '0')}/${parts[2]}`;
+        const monthYear = `${(parts[1] || '').padStart(2, '0')}/${parts[2]}`;
         if (!grouped[monthYear]) grouped[monthYear] = [];
         grouped[monthYear].push(s);
       }
@@ -1252,7 +1253,8 @@ function App() {
           const isChamp = team.id === championTeamId;
           const players = team.players || [];
           players.forEach(p => {
-            const normName = p.name.trim().toLowerCase();
+            const pName = p.name || '';
+            const normName = pName.trim().toLowerCase();
             if (!playerStats[normName]) {
               playerStats[normName] = { name: p.name.trim(), goals: 0, assists: 0, champWins: 0, notaSum: 0, matchesForNota: 0, artilheiroCount: 0, garcomCount: 0, mvpCount: 0 };
             }
@@ -1287,7 +1289,8 @@ function App() {
 
       const playersWithRaw = Object.values(playerStats)
         .filter(p => {
-          const rp = registeredPlayers.find(rp => rp.name.trim().toLowerCase() === p.name.trim().toLowerCase());
+          const pName = p.name || '';
+          const rp = registeredPlayers.find(rp => (rp.name || '').trim().toLowerCase() === pName.trim().toLowerCase());
           return rp ? !rp.isGuest : true;
         })
         .map(p => ({
@@ -1336,7 +1339,8 @@ function App() {
         const getBestByPosition = (pos, count) => {
           return playersArray
             .filter(p => {
-              const rp = registeredPlayers.find(reg => reg.name.trim().toLowerCase() === p.name.trim().toLowerCase());
+              const pName = p.name || '';
+              const rp = registeredPlayers.find(reg => (reg.name || '').trim().toLowerCase() === pName.trim().toLowerCase());
               return rp?.posicao === pos;
             })
             .sort((a, b) => b.mvpScore - a.mvpScore || (b.goals + b.assists) - (a.goals + a.assists))
@@ -1372,10 +1376,10 @@ function App() {
   const getPlayersStatsForMonth = (monthKey) => {
     const grouped = {};
     sessions.forEach(s => {
-      if (!s.date) return;
+      if (!s.date || typeof s.date !== 'string') return;
       const parts = s.date.split('/');
       if (parts.length === 3) {
-        const mY = `${parts[1].padStart(2, '0')}/${parts[2]}`;
+        const mY = `${(parts[1] || '').padStart(2, '0')}/${parts[2]}`;
         if (!grouped[mY]) grouped[mY] = [];
         grouped[mY].push(s);
       }
@@ -1402,7 +1406,8 @@ function App() {
         const isChamp = team.id === championTeamId;
         const players = team.players || [];
         players.forEach(p => {
-          const normName = p.name.trim().toLowerCase();
+          const pName = p.name || '';
+          const normName = pName.trim().toLowerCase();
           if (!playerStats[normName]) {
             playerStats[normName] = {
               name: p.name.trim(),
@@ -1486,10 +1491,11 @@ function App() {
     let puskasWins = 0;
     let matchHistory = [];
 
-    const normName = playerName.trim().toLowerCase();
+    const pNameForStats = playerName || '';
+    const normName = pNameForStats.trim().toLowerCase();
 
     sessions.forEach(session => {
-      if (session.puskas && session.puskas.trim().toLowerCase() === normName) {
+      if (session.puskas && typeof session.puskas === 'string' && session.puskas.trim().toLowerCase() === normName) {
         puskasWins++;
       }
 
@@ -1514,7 +1520,7 @@ function App() {
 
       teams.forEach(team => {
         const players = team.players || [];
-        const playerInTeam = players.find(p => p.name.trim().toLowerCase() === normName);
+        const playerInTeam = players.find(p => (p.name || '').trim().toLowerCase() === normName);
         if (playerInTeam) {
           playedInSession = true;
           const playerGoals = playerInTeam.goals || 0;
@@ -1540,7 +1546,7 @@ function App() {
         if (wonThisSession) peladasGanhas++;
 
         const ratings = calculateSessionPlayerRatings(session);
-        const playerRating = ratings.find(r => r.name.trim().toLowerCase() === normName);
+        const playerRating = ratings.find(r => (r.name || '').trim().toLowerCase() === normName);
 
         if (ratings && ratings.length > 0) {
           const maxNota = ratings[0].nota;
@@ -1700,7 +1706,8 @@ function App() {
           if (p.mvpScore !== undefined) {
             nota = p.mvpScore;
           } else {
-            const r = sourceRatings.find(sr => sr.name.trim().toLowerCase() === p.name.trim().toLowerCase());
+            const pName = p.name || '';
+            const r = sourceRatings.find(sr => (sr.name || '').trim().toLowerCase() === pName.trim().toLowerCase());
             nota = r ? r.nota : 0;
           }
 
