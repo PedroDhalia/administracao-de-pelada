@@ -511,7 +511,8 @@ function App() {
     // 2. Player-name lookup (team lists, rankings)
     if (!avatarUrl && playerName) {
       initial = playerName.charAt(0).toUpperCase();
-      const rp = registeredPlayers.find(r => r.name.toLowerCase() === playerName.toLowerCase());
+      const rp = registeredPlayers.find(r => (r.name || '').trim().toLowerCase() === playerName.trim().toLowerCase()) ||
+                 registeredGoleiros.find(r => (r.name || '').trim().toLowerCase() === playerName.trim().toLowerCase());
       if (rp && rp.userId) {
         const u = users.find(us => us.id === rp.userId);
         if (u && u.avatar) avatarUrl = u.avatar;
@@ -2066,7 +2067,20 @@ function App() {
           const hasAssists = p.assists > 0;
 
           return (
-            <div key={p.id || p.name} className="field-player" style={style}>
+            <div
+              key={p.id || p.name}
+              className="field-player"
+              style={{ ...style, cursor: 'pointer' }}
+              onClick={() => {
+                const pObj = registeredPlayers.find(rp => (rp.name || '').trim().toLowerCase() === (p.name || '').trim().toLowerCase()) ||
+                             registeredGoleiros.find(rg => (rg.name || '').trim().toLowerCase() === (p.name || '').trim().toLowerCase());
+                if (pObj) {
+                  setViewingPlayerId(pObj.id);
+                  setShowProfile(true);
+                }
+              }}
+              title="Ver perfil"
+            >
               <div style={{ position: 'relative', width: 45, height: 45, margin: '0 auto' }}>
                 <PlayerAvatar playerName={p.name} size={45} />
 
@@ -2242,7 +2256,7 @@ function App() {
 
   if (showProfile) {
     const targetPlayerId = viewingPlayerId || currentUser?.jogadorId;
-    const profilePlayer = registeredPlayers.find(p => p.id === targetPlayerId);
+    const profilePlayer = registeredPlayers.find(p => p.id === targetPlayerId) || registeredGoleiros.find(p => p.id === targetPlayerId);
     const profileStats = profilePlayer ? getPlayerStats(profilePlayer.name) : null;
     const isOwnProfile = targetPlayerId === currentUser?.jogadorId;
 
