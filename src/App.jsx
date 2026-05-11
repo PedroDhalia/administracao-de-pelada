@@ -40,6 +40,7 @@ function App() {
   const [showMatchesModal, setShowMatchesModal] = useState(false);
   const [showSupremeAdmin, setShowSupremeAdmin] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [viewingPlayerId, setViewingPlayerId] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
 
   const [isLoaded, setIsLoaded] = useState(false);
@@ -2237,8 +2238,10 @@ function App() {
   );
 
   if (showProfile) {
-    const profilePlayer = registeredPlayers.find(p => p.id === currentUser?.jogadorId);
+    const targetPlayerId = viewingPlayerId || currentUser?.jogadorId;
+    const profilePlayer = registeredPlayers.find(p => p.id === targetPlayerId);
     const profileStats = profilePlayer ? getPlayerStats(profilePlayer.name) : null;
+    const isOwnProfile = targetPlayerId === currentUser?.jogadorId;
 
     let comparisonUI = null;
     const p1Id = comparePlayer1Id !== null ? comparePlayer1Id : profilePlayer?.id;
@@ -2332,25 +2335,25 @@ function App() {
     return (
       <div className="app-container" style={{ padding: 24, maxWidth: 600, margin: '0 auto', justifyContent: 'center' }}>
         <header className="header" style={{ marginBottom: 24 }}>
-          <button className="back-btn" onClick={() => setShowProfile(false)}>
+          <button className="back-btn" onClick={() => { setShowProfile(false); setViewingPlayerId(null); }}>
             <ChevronLeft size={28} />
           </button>
-          <h1>Meu Perfil</h1>
+          <h1>{isOwnProfile ? 'Meu Perfil' : 'Perfil do Jogador'}</h1>
         </header>
 
         <div className="card animated" style={{ padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24 }}>
           <div style={{ position: 'relative' }}>
-            <PlayerAvatar playerName={currentUser?.name} userId={currentUser?.id} size={120} />
-            {isUploading && (
+            <PlayerAvatar playerName={isOwnProfile ? currentUser?.name : profilePlayer?.name} userId={isOwnProfile ? currentUser?.id : null} size={120} />
+            {isOwnProfile && isUploading && (
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <span className="spinner">⏳</span>
               </div>
             )}
           </div>
           <div style={{ textAlign: 'center' }}>
-            <h2 style={{ margin: 0 }}>{currentUser?.name}</h2>
-            <p style={{ color: 'var(--text-muted)', margin: 0, marginTop: 4 }}>{currentUser?.email}</p>
-            {profilePlayer && (
+            <h2 style={{ margin: 0 }}>{isOwnProfile ? currentUser?.name : profilePlayer?.name}</h2>
+            {isOwnProfile && <p style={{ color: 'var(--text-muted)', margin: 0, marginTop: 4 }}>{currentUser?.email}</p>}
+            {isOwnProfile && profilePlayer && (
               <div style={{ marginTop: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', backgroundColor: 'rgba(255,255,255,0.05)', padding: '8px 16px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.1)' }}>
                 <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Jogador:</span>
                 <strong style={{ color: 'var(--text-main)', fontSize: 16 }}>{profilePlayer.name}</strong>
@@ -2358,19 +2361,21 @@ function App() {
               </div>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 16 }}>
-            <label className="btn-primary" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Camera size={16} /> Alterar Foto
-              <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarUpload} />
-            </label>
-            {currentUser?.avatar && <button className="btn-primary" style={{ backgroundColor: 'transparent', border: '1px solid var(--danger)', color: 'var(--danger)' }} onClick={removeAvatar}>Remover Foto</button>}
-          </div>
+          {isOwnProfile && (
+            <div style={{ display: 'flex', gap: 16 }}>
+              <label className="btn-primary" style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Camera size={16} /> Alterar Foto
+                <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarUpload} />
+              </label>
+              {currentUser?.avatar && <button className="btn-primary" style={{ backgroundColor: 'transparent', border: '1px solid var(--danger)', color: 'var(--danger)' }} onClick={removeAvatar}>Remover Foto</button>}
+            </div>
+          )}
         </div>
 
         {profileStats && (
           <>
             <div className="card animated" style={{ padding: 24, marginTop: 16 }}>
-              <h3 style={{ fontSize: 16, color: 'var(--primary)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}><Trophy size={18} /> Minhas Estatísticas</h3>
+              <h3 style={{ fontSize: 16, color: 'var(--primary)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}><Trophy size={18} /> {isOwnProfile ? 'Minhas Estatísticas' : 'Estatísticas'}</h3>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: 16 }}>
                 {[
                   { icon: '🏟️', label: 'Peladas', value: profileStats.peladasJogadas },
@@ -2628,8 +2633,10 @@ function App() {
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', zIndex: 1 }}>
                             <span className="card-title" style={{ fontSize: 18, fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                               <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-muted)' }}>{p.displayRank}º</span>
-                              <PlayerAvatar playerName={p.name} size={36} />
-                              {p.name}
+                              <span onClick={(e) => { e.stopPropagation(); setViewingPlayerId(p.id); setShowProfile(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} title="Ver perfil">
+                                <PlayerAvatar playerName={p.name} size={36} />
+                                <span style={{ transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = ''}>{p.name}</span>
+                              </span>
                               {p.isGuest && <span style={{ fontSize: 10, backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', color: 'var(--text-muted)', marginLeft: 8 }}>Convidado</span>}
                               <span style={{ marginLeft: 8, fontSize: 16, whiteSpace: 'nowrap' }}>
                                 {getStatValue(p)}
@@ -2714,8 +2721,10 @@ function App() {
                         {showPodium && (
                           <div className="podium-container animated" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: '8px', paddingTop: '32px', paddingBottom: '16px', marginBottom: '8px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '30%', position: 'relative' }}>
-                              <PlayerAvatar playerName={podiumPlayers[1].name} size={48} />
-                              <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)' }}>{podiumPlayers[1].name}</div>
+                              <div onClick={(e) => { e.stopPropagation(); setViewingPlayerId(podiumPlayers[1].id); setShowProfile(true); }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
+                                <PlayerAvatar playerName={podiumPlayers[1].name} size={48} />
+                                <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)', transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-main)'}>{podiumPlayers[1].name}</div>
+                              </div>
                               <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[1])}</div>
                               {renderPlayerBadgesForMonth(podiumPlayers[1].name, currentMonthKey, true)}
                               {isGlobalAdmin && (
@@ -2741,8 +2750,10 @@ function App() {
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '35%', position: 'relative', zIndex: 10 }}>
                               <div style={{ position: 'absolute', top: '-28px', fontSize: '26px', filter: 'drop-shadow(0 2px 4px rgba(234,179,8,0.4))' }}>👑</div>
-                              <PlayerAvatar playerName={podiumPlayers[0].name} size={64} />
-                              <div style={{ marginTop: '8px', fontSize: '15px', fontWeight: 'bold', textAlign: 'center', color: '#eab308', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>{podiumPlayers[0].name}</div>
+                              <div onClick={(e) => { e.stopPropagation(); setViewingPlayerId(podiumPlayers[0].id); setShowProfile(true); }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
+                                <PlayerAvatar playerName={podiumPlayers[0].name} size={64} />
+                                <div style={{ marginTop: '8px', fontSize: '15px', fontWeight: 'bold', textAlign: 'center', color: '#eab308', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', transition: 'filter 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.filter = 'brightness(1.2)'} onMouseOut={(e) => e.currentTarget.style.filter = 'none'}>{podiumPlayers[0].name}</div>
+                              </div>
                               <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[0])}</div>
                               {renderPlayerBadgesForMonth(podiumPlayers[0].name, currentMonthKey, true)}
                               {isGlobalAdmin && (
@@ -2767,8 +2778,10 @@ function App() {
                               <div onClick={() => togglePlayerStats(podiumPlayers[0].id)} style={{ width: '100%', height: '100px', backgroundColor: 'rgba(234, 179, 8, 0.15)', border: '1px solid rgba(234, 179, 8, 0.4)', borderBottom: 'none', borderRadius: '8px 8px 0 0', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', paddingTop: '8px', fontSize: '28px', boxShadow: '0 -4px 12px rgba(234,179,8,0.1)', cursor: 'pointer' }}>🥇</div>
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '30%', position: 'relative' }}>
-                              <PlayerAvatar playerName={podiumPlayers[2].name} size={48} />
-                              <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)' }}>{podiumPlayers[2].name}</div>
+                              <div onClick={(e) => { e.stopPropagation(); setViewingPlayerId(podiumPlayers[2].id); setShowProfile(true); }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
+                                <PlayerAvatar playerName={podiumPlayers[2].name} size={48} />
+                                <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)', transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-main)'}>{podiumPlayers[2].name}</div>
+                              </div>
                               <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[2])}</div>
                               {renderPlayerBadgesForMonth(podiumPlayers[2].name, currentMonthKey, true)}
                               {isGlobalAdmin && (
@@ -2970,8 +2983,10 @@ function App() {
                               {playerSortConfig !== 'alfabetica' && (
                                 <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-muted)' }}>{p.displayRank}º</span>
                               )}
-                              <PlayerAvatar playerName={p.name} size={36} />
-                              {p.name}
+                              <span onClick={(e) => { e.stopPropagation(); setViewingPlayerId(p.id); setShowProfile(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} title="Ver perfil">
+                                <PlayerAvatar playerName={p.name} size={36} />
+                                <span style={{ transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = ''}>{p.name}</span>
+                              </span>
                               {p.isGuest && <span style={{ fontSize: 10, backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', color: 'var(--text-muted)', marginLeft: 8 }}>Convidado</span>}
                               <span style={{ marginLeft: 8, fontSize: 16, whiteSpace: 'nowrap' }}>
                                 {getStatValue(p)}
@@ -3064,8 +3079,10 @@ function App() {
                           <div className="podium-container animated" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: '8px', paddingTop: '32px', paddingBottom: '16px', marginBottom: '8px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                             {/* 2ND PLACE */}
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '30%', position: 'relative' }}>
-                              <PlayerAvatar playerName={podiumPlayers[1].name} size={48} />
-                              <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)' }}>{podiumPlayers[1].name}</div>
+                              <div onClick={(e) => { e.stopPropagation(); setViewingPlayerId(podiumPlayers[1].id); setShowProfile(true); }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
+                                <PlayerAvatar playerName={podiumPlayers[1].name} size={48} />
+                                <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)', transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-main)'}>{podiumPlayers[1].name}</div>
+                              </div>
                               <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[1])}</div>
                               {renderPlayerBadges(podiumPlayers[1].name, true)}
                               {isGlobalAdmin && (
@@ -3096,8 +3113,10 @@ function App() {
                             {/* 1ST PLACE */}
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '35%', position: 'relative', zIndex: 10 }}>
                               <div style={{ position: 'absolute', top: '-28px', fontSize: '26px', filter: 'drop-shadow(0 2px 4px rgba(234,179,8,0.4))' }}>👑</div>
-                              <PlayerAvatar playerName={podiumPlayers[0].name} size={64} />
-                              <div style={{ marginTop: '8px', fontSize: '15px', fontWeight: 'bold', textAlign: 'center', color: '#eab308', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>{podiumPlayers[0].name}</div>
+                              <div onClick={(e) => { e.stopPropagation(); setViewingPlayerId(podiumPlayers[0].id); setShowProfile(true); }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
+                                <PlayerAvatar playerName={podiumPlayers[0].name} size={64} />
+                                <div style={{ marginTop: '8px', fontSize: '15px', fontWeight: 'bold', textAlign: 'center', color: '#eab308', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', transition: 'filter 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.filter = 'brightness(1.2)'} onMouseOut={(e) => e.currentTarget.style.filter = 'none'}>{podiumPlayers[0].name}</div>
+                              </div>
                               <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[0])}</div>
                               {renderPlayerBadges(podiumPlayers[0].name, true)}
                               {isGlobalAdmin && (
@@ -3227,8 +3246,10 @@ function App() {
                               {goleiroSortConfig !== 'alfabetica' && (
                                 <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-muted)' }}>{index + 1}º</span>
                               )}
-                              <PlayerAvatar playerName={p.name} size={36} />
-                              {p.name}
+                              <span onClick={(e) => { e.stopPropagation(); setViewingPlayerId(p.id); setShowProfile(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} title="Ver perfil">
+                                <PlayerAvatar playerName={p.name} size={36} />
+                                <span style={{ transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = ''}>{p.name}</span>
+                              </span>
                               {goleiroSortConfig === 'vitorias' && <span style={{ marginLeft: 8, fontSize: 16, color: 'var(--primary)', whiteSpace: 'nowrap' }}>🏆 {p.total_vitorias || 0}</span>}
                               {goleiroSortConfig === 'defesas' && <span style={{ marginLeft: 8, fontSize: 16, color: 'var(--primary)', whiteSpace: 'nowrap' }}>🧤 {p.total_defesas_dificeis || 0}</span>}
                             </span>
@@ -3299,7 +3320,28 @@ function App() {
                             )}
                             <div className="hl-name" style={{ display: 'flex', flexDirection: hasMultiple ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: hasMultiple ? 6 : 8, width: '100%', flexWrap: 'wrap' }}>
                               {val > 0 && !hasMultiple && <PlayerAvatar playerName={statObj.name} size={24} />}
-                              <span style={{ textAlign: 'center', wordBreak: 'break-word', lineHeight: 1.3 }}>
+                              <span
+                                style={{
+                                  textAlign: 'center',
+                                  wordBreak: 'break-word',
+                                  lineHeight: 1.3,
+                                  cursor: (!hasMultiple && val > 0) ? 'pointer' : 'default',
+                                  transition: 'color 0.2s ease'
+                                }}
+                                onClick={(e) => {
+                                  if (!hasMultiple && val > 0) {
+                                    e.stopPropagation();
+                                    const p = registeredPlayers.find(rp => rp.name === statObj.name) || registeredGoleiros.find(rg => rg.name === statObj.name);
+                                    if (p) {
+                                      setViewingPlayerId(p.id);
+                                      setShowProfile(true);
+                                    }
+                                  }
+                                }}
+                                onMouseOver={(e) => { if (!hasMultiple && val > 0) e.currentTarget.style.color = 'var(--primary)'; }}
+                                onMouseOut={(e) => { if (!hasMultiple && val > 0) e.currentTarget.style.color = ''; }}
+                                title={(!hasMultiple && val > 0) ? "Ver perfil" : ""}
+                              >
                                 {val > 0 ? statObj.name : '-'}
                               </span>
                               {hasMultiple && val > 0 && (
@@ -3522,7 +3564,28 @@ function App() {
 
                                 <div className="hl-name" style={{ display: 'flex', flexDirection: hasMultiple ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: hasMultiple ? 6 : 8, width: '100%', flexWrap: 'wrap' }}>
                                   {val > 0 && !hasMultiple && <PlayerAvatar playerName={statObj.name} size={24} />}
-                                  <span style={{ textAlign: 'center', wordBreak: 'break-word', lineHeight: 1.3 }}>
+                                  <span
+                                    style={{
+                                      textAlign: 'center',
+                                      wordBreak: 'break-word',
+                                      lineHeight: 1.3,
+                                      cursor: (!hasMultiple && val > 0) ? 'pointer' : 'default',
+                                      transition: 'color 0.2s ease'
+                                    }}
+                                    onClick={(e) => {
+                                      if (!hasMultiple && val > 0) {
+                                        e.stopPropagation();
+                                        const p = registeredPlayers.find(rp => rp.name === statObj.name) || registeredGoleiros.find(rg => rg.name === statObj.name);
+                                        if (p) {
+                                          setViewingPlayerId(p.id);
+                                          setShowProfile(true);
+                                        }
+                                      }
+                                    }}
+                                    onMouseOver={(e) => { if (!hasMultiple && val > 0) e.currentTarget.style.color = 'var(--primary)'; }}
+                                    onMouseOut={(e) => { if (!hasMultiple && val > 0) e.currentTarget.style.color = ''; }}
+                                    title={(!hasMultiple && val > 0) ? "Ver perfil" : ""}
+                                  >
                                     {val > 0 ? statObj.name : '-'}
                                   </span>
                                   {hasMultiple && val > 0 && (
@@ -3722,8 +3785,13 @@ function App() {
       <div className="podium-container animated" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: '8px', paddingTop: '24px', paddingBottom: '16px', marginBottom: '8px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
         {/* 2ND PLACE */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '30%', position: 'relative' }}>
-          <PlayerAvatar playerName={players[1].name} size={40} />
-          <div style={{ marginTop: '8px', fontSize: '12px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)' }}>{players[1].name}</div>
+          <div onClick={() => {
+            const pObj = registeredPlayers.find(rp => rp.name === players[1].name) || registeredGoleiros.find(rg => rg.name === players[1].name);
+            if (pObj) { setViewingPlayerId(pObj.id); setShowProfile(true); }
+          }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
+            <PlayerAvatar playerName={players[1].name} size={40} />
+            <div style={{ marginTop: '8px', fontSize: '12px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)', transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-main)'}>{players[1].name}</div>
+          </div>
           <div style={{ fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>{getStatValue(players[1])}</div>
           <div style={{ width: '100%', height: '50px', backgroundColor: 'rgba(148, 163, 184, 0.15)', border: '1px solid rgba(148, 163, 184, 0.3)', borderBottom: 'none', borderRadius: '8px 8px 0 0', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', paddingTop: '6px', fontSize: '20px' }}>🥈</div>
         </div>
@@ -3731,16 +3799,26 @@ function App() {
         {/* 1ST PLACE */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '35%', position: 'relative', zIndex: 10 }}>
           <div style={{ position: 'absolute', top: '-22px', fontSize: '20px', filter: 'drop-shadow(0 2px 4px rgba(234,179,8,0.4))' }}>👑</div>
-          <PlayerAvatar playerName={players[0].name} size={50} />
-          <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', color: '#eab308', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>{players[0].name}</div>
+          <div onClick={() => {
+            const pObj = registeredPlayers.find(rp => rp.name === players[0].name) || registeredGoleiros.find(rg => rg.name === players[0].name);
+            if (pObj) { setViewingPlayerId(pObj.id); setShowProfile(true); }
+          }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
+            <PlayerAvatar playerName={players[0].name} size={50} />
+            <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', color: '#eab308', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', transition: 'filter 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.filter = 'brightness(1.2)'} onMouseOut={(e) => e.currentTarget.style.filter = 'none'}>{players[0].name}</div>
+          </div>
           <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '6px' }}>{getStatValue(players[0])}</div>
           <div style={{ width: '100%', height: '70px', backgroundColor: 'rgba(234, 179, 8, 0.15)', border: '1px solid rgba(234, 179, 8, 0.4)', borderBottom: 'none', borderRadius: '8px 8px 0 0', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', paddingTop: '6px', fontSize: '24px', boxShadow: '0 -4px 12px rgba(234,179,8,0.1)' }}>🥇</div>
         </div>
 
         {/* 3RD PLACE */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '30%', position: 'relative' }}>
-          <PlayerAvatar playerName={players[2].name} size={40} />
-          <div style={{ marginTop: '8px', fontSize: '12px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)' }}>{players[2].name}</div>
+          <div onClick={() => {
+            const pObj = registeredPlayers.find(rp => rp.name === players[2].name) || registeredGoleiros.find(rg => rg.name === players[2].name);
+            if (pObj) { setViewingPlayerId(pObj.id); setShowProfile(true); }
+          }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
+            <PlayerAvatar playerName={players[2].name} size={40} />
+            <div style={{ marginTop: '8px', fontSize: '12px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)', transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-main)'}>{players[2].name}</div>
+          </div>
           <div style={{ fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>{getStatValue(players[2])}</div>
           <div style={{ width: '100%', height: '35px', backgroundColor: 'rgba(180, 83, 9, 0.15)', border: '1px solid rgba(180, 83, 9, 0.3)', borderBottom: 'none', borderRadius: '8px 8px 0 0', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', paddingTop: '6px', fontSize: '18px' }}>🥉</div>
         </div>
@@ -4285,7 +4363,16 @@ function App() {
                   {activeSession.goleiros.map(goleiro => (
                     <div key={goleiro.id} className="player-item" style={{ backgroundColor: '#141414', borderLeft: '4px solid #a855f7', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
                       <div className="player-header">
-                        <span style={{ color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span
+                          style={{ color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+                          onClick={() => {
+                            const pObj = registeredPlayers.find(rp => rp.name === goleiro.name) || registeredGoleiros.find(rg => rg.name === goleiro.name);
+                            if (pObj) { setViewingPlayerId(pObj.id); setShowProfile(true); }
+                          }}
+                          onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'}
+                          onMouseOut={(e) => e.currentTarget.style.color = '#ffffff'}
+                          title="Ver perfil"
+                        >
                           <span style={{ fontSize: '18px' }}>🧤</span> {goleiro.name}
                           {canEditSession(activeSession) && (
                             <button className="icon-btn" style={{ padding: 4, color: 'rgba(255,255,255,0.6)' }} onClick={(e) => { e.stopPropagation(); editGoleiroNameSession(goleiro.id, goleiro.name); }}>
@@ -4389,8 +4476,13 @@ function App() {
                               >
                                 {actualIdx + 1}
                               </span>
-                              <PlayerAvatar playerName={p.name} size={28} />
-                              <span>{p.name} <span className="team-name">({p.teamName})</span></span>
+                              <span onClick={() => {
+                                const pObj = registeredPlayers.find(rp => rp.name === p.name) || registeredGoleiros.find(rg => rg.name === p.name);
+                                if (pObj) { setViewingPlayerId(pObj.id); setShowProfile(true); }
+                              }} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }} title="Ver perfil">
+                                <PlayerAvatar playerName={p.name} size={28} />
+                                <span style={{ transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = ''}>{p.name} <span className="team-name">({p.teamName})</span></span>
+                              </span>
                             </div>
                             <span className="score-val" style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>{p.goals} <span style={{ fontSize: '14px' }}>⚽</span></span>
                           </div>
@@ -4474,13 +4566,17 @@ function App() {
 
                           return (
                             <div key={p.id} className="ranking-item" style={{ padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                              <div className="left-part" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                <span className="rank-badge" style={{ backgroundColor: getTeamColor(p.teamName), color: getTextColor(getTeamColor(p.teamName)) }}>
-                                  {actualIdx + 1}
-                                </span>
+                              <div
+                                onClick={() => {
+                                  const pObj = registeredPlayers.find(rp => rp.name === p.name) || registeredGoleiros.find(rg => rg.name === p.name);
+                                  if (pObj) { setViewingPlayerId(pObj.id); setShowProfile(true); }
+                                }}
+                                style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
+                                title="Ver perfil"
+                              >
                                 <PlayerAvatar playerName={p.name} size={32} />
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                  <span style={{ fontSize: '14px', fontWeight: '600' }}>{p.name} {actualIdx === 0 && <span title="MVP da Pelada" style={{ fontSize: 12 }}>👑</span>}</span>
+                                  <span style={{ fontSize: '14px', fontWeight: '600', transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = ''}>{p.name} {actualIdx === 0 && <span title="MVP da Pelada" style={{ fontSize: 12 }}>👑</span>}</span>
                                   {(p.goals > 0 || p.assists > 0) && (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', opacity: 0.8 }}>
                                       {p.goals > 0 && <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>⚽ <span style={{ color: 'var(--primary)', fontWeight: 'bold' }}>{p.goals}</span></span>}
