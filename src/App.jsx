@@ -2,8 +2,11 @@ import { useState, useEffect } from 'react';
 import {
   Trophy, Users, Target, Plus, Minus, Trash2, User, Star, Info,
   Flag, Goal, Calendar, ChevronLeft, ChevronDown, ChevronUp, UserPlus, Flame, Medal, Circle, Pencil,
-  LogOut, Shield, ShieldAlert, Key, Database, Camera, Hand, X
+  LogOut, Shield, ShieldAlert, Key, Database, Camera, Hand, X, TrendingUp, TrendingDown
 } from 'lucide-react';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area
+} from 'recharts';
 import './index.css';
 import './compare.css';
 
@@ -2374,6 +2377,82 @@ function App() {
 
         {profileStats && (
           <>
+            {(() => {
+              const evolutionData = allHighlights.map(h => {
+                const monthStats = getPlayersStatsForMonth(h.monthKey);
+                const pStat = monthStats.find(ps => ps.name === profilePlayer.name);
+                return {
+                  month: h.label.split(' — ')[0] || h.label,
+                  key: h.monthKey,
+                  nota: pStat ? parseFloat(pStat.media_nota) : null
+                };
+              }).filter(d => d.nota !== null).reverse();
+
+              if (evolutionData.length < 2) return null;
+
+              return (
+                <div className="card animated" style={{ padding: 24, marginTop: 16 }}>
+                  <h3 style={{ fontSize: 16, color: 'var(--primary)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <TrendingUp size={18} /> Evolução de Nota
+                  </h3>
+                  <div style={{ width: '100%', height: 200, marginTop: 10 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={evolutionData}>
+                        <defs>
+                          <linearGradient id="colorNota" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="var(--primary)" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                        <XAxis
+                          dataKey="month"
+                          stroke="var(--text-muted)"
+                          fontSize={10}
+                          tickLine={false}
+                          axisLine={false}
+                        />
+                        <YAxis
+                          domain={[0, 10]}
+                          stroke="var(--text-muted)"
+                          fontSize={10}
+                          tickLine={false}
+                          axisLine={false}
+                          ticks={[0, 2, 4, 6, 8, 10]}
+                        />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: 'rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', fontSize: 12 }}
+                          itemStyle={{ color: 'var(--primary)' }}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="nota"
+                          stroke="var(--primary)"
+                          strokeWidth={3}
+                          fillOpacity={1}
+                          fill="url(#colorNota)"
+                          animationDuration={1500}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12 }}>
+                    {(() => {
+                      const first = evolutionData[0].nota;
+                      const last = evolutionData[evolutionData.length - 1].nota;
+                      const totalDiff = last - first;
+                      return (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: totalDiff >= 0 ? '#22c55e' : '#ef4444' }}>
+                          {totalDiff >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                          <span>Saldo Total: {totalDiff >= 0 ? '+' : ''}{totalDiff.toFixed(1)} pontos na temporada</span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              );
+            })()}
+
             <div className="card animated" style={{ padding: 24, marginTop: 16 }}>
               <h3 style={{ fontSize: 16, color: 'var(--primary)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}><Trophy size={18} /> {isOwnProfile ? 'Minhas Estatísticas' : 'Estatísticas'}</h3>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: 16 }}>
@@ -2474,6 +2553,11 @@ function App() {
       const months = allHighlights.map(h => ({ key: h.monthKey, label: h.label }));
       const currentMonthKey = selectedMonthKey || (months.length > 0 ? months[0].key : null);
       const monthlyPlayers = currentMonthKey ? getPlayersStatsForMonth(currentMonthKey) : [];
+
+      // Get previous month stats for comparison
+      const currentIdx = months.findIndex(m => m.key === currentMonthKey);
+      const prevMonthKey = (currentIdx !== -1 && currentIdx < months.length - 1) ? months[currentIdx + 1].key : null;
+      const prevMonthlyPlayers = prevMonthKey ? getPlayersStatsForMonth(prevMonthKey) : [];
 
       return (
         <div className="app-container">
@@ -2641,6 +2725,28 @@ function App() {
                               <span style={{ marginLeft: 8, fontSize: 16, whiteSpace: 'nowrap' }}>
                                 {getStatValue(p)}
                               </span>
+                              {(() => {
+                                const prevP = prevMonthlyPlayers.find(pp => pp.name === p.name);
+                                if (!prevP || !p.media_nota || !prevP.media_nota) return null;
+                                const diff = p.media_nota - prevP.media_nota;
+                                if (Math.abs(diff) < 0.1) return null;
+                                return (
+                                  <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    fontSize: 11,
+                                    padding: '2px 8px',
+                                    borderRadius: '12px',
+                                    backgroundColor: diff > 0 ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                                    color: diff > 0 ? '#22c55e' : '#ef4444',
+                                    marginLeft: 'auto'
+                                  }}>
+                                    {diff > 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                                    <span>{diff > 0 ? 'Subiu' : 'Desceu'} {Math.abs(diff).toFixed(1)}</span>
+                                  </div>
+                                );
+                              })()}
                             </span>
                             {isGlobalAdmin && (
                               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
