@@ -27,7 +27,7 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const generateId = () => Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
 
-const CURRENT_FORMULA_VERSION = 3; // Increment this when formula changes
+const CURRENT_FORMULA_VERSION = 4; // Increment this when formula changes
 
 function App() {
   const [sessions, setSessions] = useState([]);
@@ -188,7 +188,7 @@ function App() {
         players.forEach(p => {
           const normName = p.name.trim().toLowerCase();
           if (!statsByName[normName]) {
-            statsByName[normName] = { goals: 0, assists: 0, wins: 0, matchesForNota: 0, artilheiroCount: 0, garcomCount: 0, mvpCount: 0 };
+            statsByName[normName] = { goals: 0, assists: 0, wins: 0, matchesForNota: 0, artilheiroCount: 0, garcomCount: 0, mvpCount: 0, cleanSheetsCount: 0 };
           }
           statsByName[normName].goals += (p.goals || 0);
           statsByName[normName].assists += (p.assists || 0);
@@ -196,6 +196,35 @@ function App() {
             statsByName[normName].wins += 1;
           }
         });
+      });
+
+      // Calculate clean sheets per team for this session
+      const cleanSheetsByTeam = {};
+      if (session.matches) {
+        session.matches.forEach(m => {
+          if (!cleanSheetsByTeam[m.team1Id]) cleanSheetsByTeam[m.team1Id] = 0;
+          if (!cleanSheetsByTeam[m.team2Id]) cleanSheetsByTeam[m.team2Id] = 0;
+          if (m.score2 === 0) cleanSheetsByTeam[m.team1Id]++;
+          if (m.score1 === 0) cleanSheetsByTeam[m.team2Id]++;
+        });
+      }
+
+      // Accumulate clean sheets for defenders (globally)
+      teams.forEach(team => {
+        const teamCS = cleanSheetsByTeam[team.id] || 0;
+        if (teamCS > 0) {
+          const players = team.players || [];
+          players.forEach(p => {
+            const normName = p.name.trim().toLowerCase();
+            const rp = currentPlayers.find(reg => (reg.name || '').trim().toLowerCase() === normName);
+            if (rp?.posicao === 'Zagueiro') {
+              if (!statsByName[normName]) {
+                statsByName[normName] = { goals: 0, assists: 0, wins: 0, matchesForNota: 0, artilheiroCount: 0, garcomCount: 0, mvpCount: 0, cleanSheetsCount: 0 };
+              }
+              statsByName[normName].cleanSheetsCount += teamCS;
+            }
+          });
+        }
       });
 
       const allPlayersInSession = teams.flatMap(t => t.players || []);
@@ -209,7 +238,7 @@ function App() {
       ratings.forEach(r => {
         const normName = r.name.trim().toLowerCase();
         if (!statsByName[normName]) {
-          statsByName[normName] = { goals: 0, assists: 0, wins: 0, matchesForNota: 0, artilheiroCount: 0, garcomCount: 0, mvpCount: 0 };
+          statsByName[normName] = { goals: 0, assists: 0, wins: 0, matchesForNota: 0, artilheiroCount: 0, garcomCount: 0, mvpCount: 0, cleanSheetsCount: 0 };
         }
         statsByName[normName].matchesForNota += 1;
 
@@ -239,9 +268,9 @@ function App() {
     const playerStatsWithRaw = currentPlayers.map(p => {
       const pName = p.name || '';
       const normName = pName.trim().toLowerCase();
-      const s = statsByName[normName] || { goals: 0, assists: 0, wins: 0, matchesForNota: 0, artilheiroCount: 0, garcomCount: 0, mvpCount: 0 };
-      // New Formula: Goals*5 + Assists*4 + Wins*1.5 + Artilheiro*1 + Garcom*1 + MVP*2
-      const rawScore = (s.goals * 5) + (s.assists * 4) + (s.wins * 1.5) + (s.artilheiroCount * 1) + (s.garcomCount * 1) + (s.mvpCount * 2);
+      const s = statsByName[normName] || { goals: 0, assists: 0, wins: 0, matchesForNota: 0, artilheiroCount: 0, garcomCount: 0, mvpCount: 0, cleanSheetsCount: 0 };
+      // New Formula: Goals*5 + Assists*4 + Wins*1.5 + Artilheiro*1 + Garcom*1 + MVP*2 + CleanSheets*2
+      const rawScore = (s.goals * 5) + (s.assists * 4) + (s.wins * 1.5) + (s.artilheiroCount * 1) + (s.garcomCount * 1) + (s.mvpCount * 2) + (s.cleanSheetsCount * 2);
       return { p, s, rawScore };
     });
 
@@ -1273,7 +1302,7 @@ function App() {
             const pName = p.name || '';
             const normName = pName.trim().toLowerCase();
             if (!playerStats[normName]) {
-              playerStats[normName] = { name: p.name.trim(), goals: 0, assists: 0, champWins: 0, notaSum: 0, matchesForNota: 0, artilheiroCount: 0, garcomCount: 0, mvpCount: 0 };
+              playerStats[normName] = { name: p.name.trim(), goals: 0, assists: 0, champWins: 0, notaSum: 0, matchesForNota: 0, artilheiroCount: 0, garcomCount: 0, mvpCount: 0, cleanSheetsCount: 0 };
             }
             playerStats[normName].goals += (p.goals || 0);
             playerStats[normName].assists += (p.assists || 0);
@@ -1281,6 +1310,33 @@ function App() {
               playerStats[normName].champWins += 1;
             }
           });
+        });
+
+        // Calculate clean sheets per team for this session
+        const cleanSheetsByTeam = {};
+        if (session.matches) {
+          session.matches.forEach(m => {
+            if (!cleanSheetsByTeam[m.team1Id]) cleanSheetsByTeam[m.team1Id] = 0;
+            if (!cleanSheetsByTeam[m.team2Id]) cleanSheetsByTeam[m.team2Id] = 0;
+            if (m.score2 === 0) cleanSheetsByTeam[m.team1Id]++;
+            if (m.score1 === 0) cleanSheetsByTeam[m.team2Id]++;
+          });
+        }
+
+        // Accumulate clean sheets for defenders
+        teams.forEach(team => {
+          const teamCS = cleanSheetsByTeam[team.id] || 0;
+          if (teamCS > 0) {
+            const players = team.players || [];
+            players.forEach(p => {
+              const pName = p.name || '';
+              const normName = pName.trim().toLowerCase();
+              const rp = registeredPlayers.find(reg => (reg.name || '').trim().toLowerCase() === normName);
+              if (rp?.posicao === 'Zagueiro' && playerStats[normName]) {
+                playerStats[normName].cleanSheetsCount += teamCS;
+              }
+            });
+          }
         });
 
         const allPlayersInSession = teams.flatMap(t => t.players || []);
@@ -1312,8 +1368,8 @@ function App() {
         })
         .map(p => ({
           ...p,
-          // New Formula: Goals*5 + Assists*4 + Wins*1.5 + Artilheiro*1 + Garcom*1 + MVP*2
-          rawScore: (p.goals * 5) + (p.assists * 4) + (p.champWins * 1.5) + ((p.artilheiroCount || 0) * 1) + ((p.garcomCount || 0) * 1) + ((p.mvpCount || 0) * 2)
+          // New Formula: Goals*5 + Assists*4 + Wins*1.5 + Artilheiro*1 + Garcom*1 + MVP*2 + CleanSheets*2
+          rawScore: (p.goals * 5) + (p.assists * 4) + (p.champWins * 1.5) + ((p.artilheiroCount || 0) * 1) + ((p.garcomCount || 0) * 1) + ((p.mvpCount || 0) * 2) + ((p.cleanSheetsCount || 0) * 2)
         }));
 
       const allRaw = playersWithRaw.map(x => x.rawScore);
@@ -1435,7 +1491,8 @@ function App() {
               matchesForNota: 0,
               artilheiroCount: 0,
               garcomCount: 0,
-              mvpCount: 0
+              mvpCount: 0,
+              cleanSheetsCount: 0
             };
           }
           playerStats[normName].total_gols += (p.goals || 0);
@@ -1444,6 +1501,33 @@ function App() {
             playerStats[normName].total_vitorias += 1;
           }
         });
+      });
+
+      // Calculate clean sheets per team for this session
+      const cleanSheetsByTeam = {};
+      if (session.matches) {
+        session.matches.forEach(m => {
+          if (!cleanSheetsByTeam[m.team1Id]) cleanSheetsByTeam[m.team1Id] = 0;
+          if (!cleanSheetsByTeam[m.team2Id]) cleanSheetsByTeam[m.team2Id] = 0;
+          if (m.score2 === 0) cleanSheetsByTeam[m.team1Id]++;
+          if (m.score1 === 0) cleanSheetsByTeam[m.team2Id]++;
+        });
+      }
+
+      // Accumulate clean sheets for defenders
+      teams.forEach(team => {
+        const teamCS = cleanSheetsByTeam[team.id] || 0;
+        if (teamCS > 0) {
+          const players = team.players || [];
+          players.forEach(p => {
+            const pName = p.name || '';
+            const normName = pName.trim().toLowerCase();
+            const rp = registeredPlayers.find(reg => (reg.name || '').trim().toLowerCase() === normName);
+            if (rp?.posicao === 'Zagueiro' && playerStats[normName]) {
+              playerStats[normName].cleanSheetsCount += teamCS;
+            }
+          });
+        }
       });
 
       const allPlayersInSession = teams.flatMap(t => t.players || []);
@@ -1469,8 +1553,8 @@ function App() {
 
     const playersWithRaw = Object.values(playerStats).map(p => ({
       ...p,
-      // New Formula: Goals*5 + Assists*4 + Wins*1.5 + Artilheiro*1 + Garcom*1 + MVP*2
-      rawScore: ((p.total_gols || 0) * 5) + ((p.total_assistencias || 0) * 4) + ((p.total_vitorias || 0) * 1.5) + ((p.artilheiroCount || 0) * 1) + ((p.garcomCount || 0) * 1) + ((p.mvpCount || 0) * 2)
+      // New Formula: Goals*5 + Assists*4 + Wins*1.5 + Artilheiro*1 + Garcom*1 + MVP*2 + CleanSheets*2
+      rawScore: ((p.total_gols || 0) * 5) + ((p.total_assistencias || 0) * 4) + ((p.total_vitorias || 0) * 1.5) + ((p.artilheiroCount || 0) * 1) + ((p.garcomCount || 0) * 1) + ((p.mvpCount || 0) * 2) + ((p.cleanSheetsCount || 0) * 2)
     }));
 
     const allRaw = playersWithRaw.map(x => x.rawScore);
@@ -1606,10 +1690,130 @@ function App() {
     };
   };
 
-  const renderPlayerBadges = (playerName, isPodium = false) => {
+  // Version of getPlayerStats filtered by month key (e.g. "05/2026")
+  const getPlayerStatsForMonth = (playerName, monthKey) => {
+    let peladasJogadas = 0;
+    let totalGoals = 0;
+    let totalAssists = 0;
+    let peladasGanhas = 0;
+    let artilheiroCount = 0;
+    let garcomCount = 0;
+    let mvpCount = 0;
+    let puskasWins = 0;
+    let matchHistory = [];
+
+    const pNameForStats = playerName || '';
+    const normName = pNameForStats.trim().toLowerCase();
+
+    // Filter sessions by monthKey
+    const monthSessions = sessions.filter(s => {
+      if (!s.date || typeof s.date !== 'string') return false;
+      const parts = s.date.split('/');
+      if (parts.length !== 3) return false;
+      const mY = `${(parts[1] || '').padStart(2, '0')}/${parts[2]}`;
+      return mY === monthKey;
+    });
+
+    monthSessions.forEach(session => {
+      if (session.puskas && typeof session.puskas === 'string' && session.puskas.trim().toLowerCase() === normName) {
+        puskasWins++;
+      }
+
+      const teams = session.teams || [];
+      if (teams.length === 0) return;
+
+      const teamsWithPoints = teams.map(t => ({
+        ...t,
+        points: (t.wins || 0) * 3 + (t.draws || 0) * 1
+      })).sort((a, b) => b.points - a.points || (b.wins || 0) - (a.wins || 0));
+
+      let championTeamId = null;
+      if (teamsWithPoints.length > 0 && teamsWithPoints[0].points > 0) {
+        championTeamId = teamsWithPoints[0].id;
+      }
+
+      let playedInSession = false;
+      let wonThisSession = false;
+
+      const sessionMaxGoals = Math.max(0, ...teams.flatMap(t => t.players || []).map(p => p.goals || 0));
+      const sessionMaxAssists = Math.max(0, ...teams.flatMap(t => t.players || []).map(p => p.assists || 0));
+
+      teams.forEach(team => {
+        const players = team.players || [];
+        const playerInTeam = players.find(p => (p.name || '').trim().toLowerCase() === normName);
+        if (playerInTeam) {
+          playedInSession = true;
+          const playerGoals = playerInTeam.goals || 0;
+          const playerAssists = playerInTeam.assists || 0;
+          totalGoals += playerGoals;
+          totalAssists += playerAssists;
+
+          if (playerGoals > 0 && playerGoals === sessionMaxGoals) {
+            artilheiroCount++;
+          }
+          if (playerAssists > 0 && playerAssists === sessionMaxAssists) {
+            garcomCount++;
+          }
+
+          if (team.id === championTeamId) {
+            wonThisSession = true;
+          }
+        }
+      });
+
+      if (playedInSession) {
+        peladasJogadas++;
+        if (wonThisSession) peladasGanhas++;
+
+        const ratings = calculateSessionPlayerRatings(session);
+        const playerRating = ratings.find(r => (r.name || '').trim().toLowerCase() === normName);
+
+        if (ratings && ratings.length > 0) {
+          const maxNota = ratings[0].nota;
+          const isInitialState = ratings.every(r => r.nota === 7.0);
+          if (playerRating && playerRating.nota === maxNota && !isInitialState) {
+            mvpCount++;
+          }
+        }
+
+        if (playerRating) {
+          matchHistory.push({
+            sessionId: session.id,
+            sessionName: session.name || 'Pelada',
+            sessionDate: session.date || '',
+            nota: playerRating.nota,
+            goals: playerRating.goals || 0,
+            assists: playerRating.assists || 0
+          });
+        }
+      }
+    });
+
+    const goalAvg = peladasJogadas > 0 ? (totalGoals / peladasJogadas).toFixed(2) : '0.00';
+    const assistAvg = peladasJogadas > 0 ? (totalAssists / peladasJogadas).toFixed(2) : '0.00';
+    const winRate = peladasJogadas > 0 ? Math.round((peladasGanhas / peladasJogadas) * 100) : 0;
+
+    return {
+      peladasJogadas,
+      totalGoals,
+      totalAssists,
+      peladasGanhas,
+      goalAvg,
+      assistAvg,
+      winRate,
+      artilheiroCount,
+      garcomCount,
+      mvpCount,
+      puskasWins,
+      matchHistory
+    };
+  };
+
+  // renderPlayerBadges for monthly context - shows only stats from that month
+  const renderPlayerBadgesForMonth = (playerName, monthKey, isPodium = false) => {
     if (!playerName) return null;
-    const stats = getPlayerStats(playerName);
-    const hasBadges = stats.artilheiroCount > 0 || stats.garcomCount > 0 || stats.mvpCount > 0 || stats.puskasWins > 0 || playerName.trim().toLowerCase() === 'digaum';
+    const stats = getPlayerStatsForMonth(playerName, monthKey);
+    const hasBadges = stats.artilheiroCount > 0 || stats.garcomCount > 0 || stats.mvpCount > 0 || stats.puskasWins > 0 || (playerName.trim().toLowerCase() === 'digaum' && monthKey === '05/2026');
 
     if (isPodium) {
       return (
@@ -1638,7 +1842,7 @@ function App() {
               <span>👟</span><strong style={{ color: '#eab308' }}>{stats.puskasWins}x</strong>
             </div>
           )}
-          {playerName.trim().toLowerCase() === 'digaum' && (
+          {playerName.trim().toLowerCase() === 'digaum' && monthKey === '05/2026' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(239, 68, 68, 0.2)', padding: '2px 4px', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.3)', fontSize: 10 }} title="Gol Contra">
               <span>❌</span><strong style={{ color: '#ef4444' }}>1x</strong>
             </div>
@@ -1690,12 +1894,109 @@ function App() {
           </div>
         )}
 
-        {playerName.trim().toLowerCase() === 'digaum' && (
+        {playerName.trim().toLowerCase() === 'digaum' && monthKey === '05/2026' && (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(239, 68, 68, 0.2)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.3)' }} title="Gol Contra (09/04/2026)">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(239, 68, 68, 0.2)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.3)' }} title="Gol Contra (Maio 2026)">
               <span style={{ fontSize: 14 }}>❌</span>
               <span style={{ fontSize: 12, color: '#ef4444' }}>Gol Contra</span>
               <span style={{ fontWeight: 'bold', color: '#ef4444', fontSize: 12 }}>1x</span>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  const renderPlayerBadges = (playerName, isPodium = false) => {
+    if (!playerName) return null;
+    const stats = getPlayerStats(playerName);
+    const hasBadges = stats.artilheiroCount > 0 || stats.garcomCount > 0 || stats.mvpCount > 0 || stats.puskasWins > 0 || playerName.trim().toLowerCase() === 'digaum';
+
+    if (isPodium) {
+      return (
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '4px', marginBottom: '8px', maxWidth: '100%', padding: '0 4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(255,255,255,0.05)', padding: '2px 4px', borderRadius: '4px', fontSize: 10 }} title={"Vitorias: " + (stats.peladasGanhas || 0) + " | Win Rate: " + (stats.winRate || 0) + "%"}>
+            <Trophy size={10} color="#eab308" />
+            <strong style={{ color: '#eab308' }}>{(stats.peladasGanhas || 0)}V ({(stats.winRate || 0)}%)</strong>
+          </div>
+          {stats.artilheiroCount > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 4px', borderRadius: '4px', fontSize: 10 }} title="Artilheiro">
+              <span>⚽</span><strong style={{ color: 'var(--text-main)' }}>{stats.artilheiroCount}x</strong>
+            </div>
+          )}
+          {stats.garcomCount > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 4px', borderRadius: '4px', fontSize: 10 }} title="Garçom">
+              <span>🎯</span><strong style={{ color: 'var(--text-main)' }}>{stats.garcomCount}x</strong>
+            </div>
+          )}
+          {stats.mvpCount > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(234, 179, 8, 0.2)', padding: '2px 4px', borderRadius: '4px', border: '1px solid rgba(234, 179, 8, 0.3)', fontSize: 10 }} title="MVP">
+              <span>⭐</span><strong style={{ color: '#eab308' }}>{stats.mvpCount}x</strong>
+            </div>
+          )}
+          {stats.puskasWins > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(234, 179, 8, 0.2)', padding: '2px 4px', borderRadius: '4px', border: '1px solid rgba(234, 179, 8, 0.3)', fontSize: 10 }} title="Puskas">
+              <span>👟</span><strong style={{ color: '#eab308' }}>{stats.puskasWins}x</strong>
+            </div>
+          )}
+          {playerName.trim().toLowerCase() === 'digaum' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(239, 68, 68, 0.2)', padding: '2px 4px', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.3)', fontSize: 10 }} title="Gol Contra">
+              <span>❌</span><strong style={{ color: '#ef4444' }}>2x</strong>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: '8px', fontSize: 14, color: 'var(--text-muted)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <Trophy size={16} color="#eab308" />
+          <span>Vitorias: <strong style={{ color: '#eab308' }}>{stats.peladasGanhas || 0}</strong> | Win Rate: <strong style={{ color: '#eab308' }}>{stats.winRate || 0}%</strong></span>
+        </div>
+
+        {hasBadges && (
+          <div style={{ width: '1px', height: '14px', backgroundColor: 'rgba(255,255,255,0.1)', margin: '0 4px' }}></div>
+        )}
+
+        {stats.artilheiroCount > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: '4px' }} title="Artilheiro (Mais gols numa pelada)">
+            <span style={{ fontSize: 14 }}>⚽</span>
+            <span style={{ fontSize: 12, color: 'var(--text-main)' }}>Artilheiro</span>
+            <span style={{ fontWeight: 'bold', color: 'var(--text-main)', fontSize: 12 }}>{stats.artilheiroCount}x</span>
+          </div>
+        )}
+
+        {stats.garcomCount > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: '4px' }} title="Garçom (Mais assistências numa pelada)">
+            <span style={{ fontSize: 14 }}>🎯</span>
+            <span style={{ fontSize: 12, color: 'var(--text-main)' }}>Garçom</span>
+            <span style={{ fontWeight: 'bold', color: 'var(--text-main)', fontSize: 12 }}>{stats.garcomCount}x</span>
+          </div>
+        )}
+
+        {stats.mvpCount > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(234, 179, 8, 0.2)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(234, 179, 8, 0.3)' }} title="MVP (Maior nota na pelada)">
+            <span style={{ fontSize: 14 }}>⭐</span>
+            <span style={{ fontSize: 12, color: '#eab308' }}>MVP</span>
+            <span style={{ fontWeight: 'bold', color: '#eab308', fontSize: 12 }}>{stats.mvpCount}x</span>
+          </div>
+        )}
+
+        {stats.puskasWins > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(234, 179, 8, 0.2)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(234, 179, 8, 0.3)' }} title="Prêmio Puskas (Melhor Gol)">
+            <span style={{ fontSize: 14 }}>👟</span>
+            <span style={{ fontSize: 12, color: '#eab308' }}>Puskas</span>
+            <span style={{ fontWeight: 'bold', color: '#eab308', fontSize: 12 }}>{stats.puskasWins}x</span>
+          </div>
+        )}
+
+        {playerName.trim().toLowerCase() === 'digaum' && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(239, 68, 68, 0.2)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.3)' }} title="Gol Contra">
+              <span style={{ fontSize: 14 }}>❌</span>
+              <span style={{ fontSize: 12, color: '#ef4444' }}>Gol Contra</span>
+              <span style={{ fontWeight: 'bold', color: '#ef4444', fontSize: 12 }}>2x</span>
             </div>
           </>
         )}
@@ -1993,7 +2294,7 @@ function App() {
             )}
             {name.trim().toLowerCase() === 'digaum' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(239, 68, 68, 0.2)', padding: '2px 4px', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.3)', fontSize: 9 }} title="Gol Contra">
-                <span>❌</span><strong style={{ color: '#ef4444' }}>1x</strong>
+                <span>❌</span><strong style={{ color: '#ef4444' }}>2x</strong>
               </div>
             )}
           </div>
@@ -2376,9 +2677,9 @@ function App() {
                               <span style={{ fontWeight: 'bold', color: '#eab308', fontSize: 16 }}>{p.media_nota?.toFixed(2) || '0.00'}</span>
                             </div>
                           </div>
-                          {renderPlayerBadges(p.name, false)}
+                          {renderPlayerBadgesForMonth(p.name, currentMonthKey, false)}
                           {expandedPlayerStats[p.id] && (() => {
-                            const stats = getPlayerStats(p.name);
+                            const stats = getPlayerStatsForMonth(p.name, currentMonthKey);
                             return stats.matchHistory?.length > 0 && (
                               <div className="match-history animated" style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '12px', cursor: 'default' }} onClick={(e) => e.stopPropagation()}>
                                 <h4 style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '10px' }}>Histórico nas Peladas</h4>
@@ -2416,7 +2717,7 @@ function App() {
                               <PlayerAvatar playerName={podiumPlayers[1].name} size={48} />
                               <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)' }}>{podiumPlayers[1].name}</div>
                               <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[1])}</div>
-                              {renderPlayerBadges(podiumPlayers[1].name, true)}
+                              {renderPlayerBadgesForMonth(podiumPlayers[1].name, currentMonthKey, true)}
                               {isGlobalAdmin && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
                                   <select
@@ -2443,7 +2744,7 @@ function App() {
                               <PlayerAvatar playerName={podiumPlayers[0].name} size={64} />
                               <div style={{ marginTop: '8px', fontSize: '15px', fontWeight: 'bold', textAlign: 'center', color: '#eab308', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>{podiumPlayers[0].name}</div>
                               <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[0])}</div>
-                              {renderPlayerBadges(podiumPlayers[0].name, true)}
+                              {renderPlayerBadgesForMonth(podiumPlayers[0].name, currentMonthKey, true)}
                               {isGlobalAdmin && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
                                   <select
@@ -2469,7 +2770,7 @@ function App() {
                               <PlayerAvatar playerName={podiumPlayers[2].name} size={48} />
                               <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)' }}>{podiumPlayers[2].name}</div>
                               <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[2])}</div>
-                              {renderPlayerBadges(podiumPlayers[2].name, true)}
+                              {renderPlayerBadgesForMonth(podiumPlayers[2].name, currentMonthKey, true)}
                               {isGlobalAdmin && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
                                   <select
