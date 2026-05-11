@@ -495,7 +495,7 @@ function App() {
     });
   };
 
-  const PlayerAvatar = ({ playerName, userId, size = 32 }) => {
+  const PlayerAvatar = ({ playerName, userId, size = 32, onClick }) => {
     let avatarUrl = null;
     let initial = '?';
 
@@ -523,7 +523,14 @@ function App() {
       return <img
         src={avatarUrl}
         alt={playerName || ''}
-        onClick={(e) => { e.stopPropagation(); setSelectedAvatar(avatarUrl); }}
+        onClick={(e) => { 
+          if (onClick) {
+            onClick(e);
+          } else {
+            e.stopPropagation(); 
+            setSelectedAvatar(avatarUrl); 
+          }
+        }}
         style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: '2px solid rgba(255,255,255,0.1)', cursor: 'pointer', boxSizing: 'border-box' }}
         loading="lazy"
       />;
@@ -1382,6 +1389,7 @@ function App() {
       const maxRaw = allRaw.length > 0 ? Math.max(...allRaw) : 0;
 
       const playersArray = playersWithRaw.map(p => {
+        const rp = registeredPlayers.find(reg => (reg.name || '').trim().toLowerCase() === p.name.trim().toLowerCase());
         let mvpScore = 0;
         if (p.matchesForNota > 0) {
           if (maxRaw !== minRaw) {
@@ -1391,7 +1399,12 @@ function App() {
             mvpScore = 7.0;
           }
         }
-        return { ...p, mvpScore };
+        return { 
+          ...p, 
+          mvpScore,
+          id: rp?.id || p.name,
+          isGuest: rp ? rp.isGuest : true
+        };
       });
 
       if (playersArray.length > 0) {
@@ -2082,7 +2095,19 @@ function App() {
               title="Ver perfil"
             >
               <div style={{ position: 'relative', width: 45, height: 45, margin: '0 auto' }}>
-                <PlayerAvatar playerName={p.name} size={45} />
+                <PlayerAvatar 
+                  playerName={p.name} 
+                  size={45} 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const pObj = registeredPlayers.find(rp => (rp.name || '').trim().toLowerCase() === (p.name || '').trim().toLowerCase()) ||
+                                 registeredGoleiros.find(rg => (rg.name || '').trim().toLowerCase() === (p.name || '').trim().toLowerCase());
+                    if (pObj) {
+                      setViewingPlayerId(pObj.id);
+                      setShowProfile(true);
+                    }
+                  }}
+                />
 
                 {/* MVP Star - Standardized Position */}
                 {!isHighlights && showMVP && isMVP && (
@@ -2514,7 +2539,7 @@ function App() {
             </div>
           </>
         )}
-        {renderAvatarModal()}
+
       </div>
     );
   }
@@ -2950,7 +2975,7 @@ function App() {
               </>
             )}
           </main>
-          {renderAvatarModal()}
+  
         </div>
       );
     }
@@ -3321,7 +3346,7 @@ function App() {
               </>
             )}
           </main>
-          {renderAvatarModal()}
+  
         </div>
       );
     }
@@ -3396,7 +3421,7 @@ function App() {
               </>
             )}
           </main>
-          {renderAvatarModal()}
+  
         </div>
       );
     }
@@ -3498,7 +3523,7 @@ function App() {
               ))}
             </div>
           </main>
-          {renderAvatarModal()}
+  
         </div>
       );
     }
@@ -4747,6 +4772,6 @@ function App() {
       {renderAvatarModal()}
     </div>
   );
-}
+};
 
-export default App;
+export default App;
