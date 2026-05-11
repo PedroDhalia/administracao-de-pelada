@@ -72,7 +72,6 @@ function App() {
   const [teamViewModes, setTeamViewModes] = useState({}); // 'list' or 'field'
   const [comparePlayer1Id, setComparePlayer1Id] = useState(null);
   const [comparePlayer2Id, setComparePlayer2Id] = useState(null);
-  const [profileChartMetric, setProfileChartMetric] = useState('nota'); // 'nota', 'gols', 'assistencias'
 
   const togglePlayerStats = (id) => {
     setExpandedPlayerStats(prev => ({ ...prev, [id]: !prev[id] }));
@@ -2385,9 +2384,7 @@ function App() {
                 return {
                   month: h.label.split(' — ')[0] || h.label,
                   key: h.monthKey,
-                  nota: pStat ? parseFloat(pStat.media_nota) : null,
-                  gols: pStat ? pStat.total_gols : null,
-                  assistencias: pStat ? pStat.total_assistencias : null
+                  nota: pStat ? parseFloat(pStat.media_nota) : null
                 };
               }).filter(d => d.nota !== null).reverse();
 
@@ -2395,39 +2392,16 @@ function App() {
 
               return (
                 <div className="card animated" style={{ padding: 24, marginTop: 16 }}>
-                  <h3 style={{ fontSize: 16, color: 'var(--primary)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><TrendingUp size={18} /> Evolução {profileChartMetric === 'nota' ? 'de Nota' : profileChartMetric === 'gols' ? 'de Gols' : 'de Assistências'}</div>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      {[
-                        { id: 'nota', label: 'Nota' },
-                        { id: 'gols', label: 'Gols' },
-                        { id: 'assistencias', label: 'Assist.' }
-                      ].map(m => (
-                        <button
-                          key={m.id}
-                          onClick={() => setProfileChartMetric(m.id)}
-                          style={{
-                            padding: '4px 8px',
-                            fontSize: 10,
-                            borderRadius: '6px',
-                            border: '1px solid rgba(255,255,255,0.1)',
-                            backgroundColor: profileChartMetric === m.id ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
-                            color: profileChartMetric === m.id ? '#fff' : 'var(--text-muted)',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          {m.label}
-                        </button>
-                      ))}
-                    </div>
+                  <h3 style={{ fontSize: 16, color: 'var(--primary)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <TrendingUp size={18} /> Evolução de Nota
                   </h3>
                   <div style={{ width: '100%', height: 200, marginTop: 10 }}>
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={evolutionData}>
                         <defs>
-                          <linearGradient id="colorMetric" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor={profileChartMetric === 'nota' ? 'var(--primary)' : profileChartMetric === 'gols' ? '#3b82f6' : '#a855f7'} stopOpacity={0.3}/>
-                            <stop offset="95%" stopColor={profileChartMetric === 'nota' ? 'var(--primary)' : profileChartMetric === 'gols' ? '#3b82f6' : '#a855f7'} stopOpacity={0}/>
+                          <linearGradient id="colorNota" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="var(--primary)" stopOpacity={0}/>
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
@@ -2439,24 +2413,24 @@ function App() {
                           axisLine={false}
                         />
                         <YAxis
-                          domain={profileChartMetric === 'nota' ? [0, 10] : ['auto', 'auto']}
+                          domain={[0, 10]}
                           stroke="var(--text-muted)"
                           fontSize={10}
                           tickLine={false}
                           axisLine={false}
-                          ticks={profileChartMetric === 'nota' ? [0, 2, 4, 6, 8, 10] : undefined}
+                          ticks={[0, 2, 4, 6, 8, 10]}
                         />
                         <Tooltip
                           contentStyle={{ backgroundColor: 'rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', fontSize: 12 }}
-                          itemStyle={{ color: profileChartMetric === 'nota' ? 'var(--primary)' : profileChartMetric === 'gols' ? '#3b82f6' : '#a855f7' }}
+                          itemStyle={{ color: 'var(--primary)' }}
                         />
                         <Area
                           type="monotone"
-                          dataKey={profileChartMetric}
-                          stroke={profileChartMetric === 'nota' ? 'var(--primary)' : profileChartMetric === 'gols' ? '#3b82f6' : '#a855f7'}
+                          dataKey="nota"
+                          stroke="var(--primary)"
                           strokeWidth={3}
                           fillOpacity={1}
-                          fill="url(#colorMetric)"
+                          fill="url(#colorNota)"
                           animationDuration={1500}
                         />
                       </AreaChart>
@@ -2464,13 +2438,13 @@ function App() {
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12 }}>
                     {(() => {
-                      const first = evolutionData[0][profileChartMetric];
-                      const last = evolutionData[evolutionData.length - 1][profileChartMetric];
+                      const first = evolutionData[0].nota;
+                      const last = evolutionData[evolutionData.length - 1].nota;
                       const totalDiff = last - first;
                       return (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: totalDiff >= 0 ? '#22c55e' : '#ef4444' }}>
                           {totalDiff >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                          <span>Saldo Total: {totalDiff >= 0 ? '+' : ''}{totalDiff.toFixed(profileChartMetric === 'nota' ? 1 : 0)} {profileChartMetric === 'nota' ? 'pontos' : profileChartMetric === 'gols' ? 'gols' : 'assistências'} na temporada</span>
+                          <span>Saldo Total: {totalDiff >= 0 ? '+' : ''}{totalDiff.toFixed(1)} pontos na temporada</span>
                         </div>
                       );
                     })()}
@@ -2753,26 +2727,9 @@ function App() {
                               </span>
                               {(() => {
                                 const prevP = prevMonthlyPlayers.find(pp => pp.name === p.name);
-                                if (!prevP) return null;
-
-                                let currentVal = 0;
-                                let prevVal = 0;
-                                let label = '';
-
-                                if (monthlyPlayerSortConfig === 'gols') { currentVal = p.total_gols || 0; prevVal = prevP.total_gols || 0; label = 'gols'; }
-                                else if (monthlyPlayerSortConfig === 'assistencias') { currentVal = p.total_assistencias || 0; prevVal = prevP.total_assistencias || 0; label = 'assist.'; }
-                                else if (monthlyPlayerSortConfig === 'vitorias') { currentVal = p.total_vitorias || 0; prevVal = prevP.total_vitorias || 0; label = 'vit.'; }
-                                else if (monthlyPlayerSortConfig === 'media') { currentVal = p.media_nota || 0; prevVal = prevP.media_nota || 0; label = 'pontos'; }
-                                else if (monthlyPlayerSortConfig === 'ga') { currentVal = (p.total_gols || 0) + (p.total_assistencias || 0); prevVal = (prevP.total_gols || 0) + (prevP.total_assistencias || 0); label = 'G+A'; }
-                                else if (monthlyPlayerSortConfig === 'media_ga') {
-                                  currentVal = p.matchesForNota > 0 ? (p.total_gols + p.total_assistencias) / p.matchesForNota : 0;
-                                  prevVal = prevP.matchesForNota > 0 ? (prevP.total_gols + prevP.total_assistencias) / prevP.matchesForNota : 0;
-                                  label = 'média';
-                                }
-
-                                const diff = currentVal - prevVal;
-                                if (Math.abs(diff) < 0.01) return null;
-
+                                if (!prevP || !p.media_nota || !prevP.media_nota || monthlyPlayerSortConfig !== 'media') return null;
+                                const diff = p.media_nota - prevP.media_nota;
+                                if (Math.abs(diff) < 0.1) return null;
                                 return (
                                   <div style={{
                                     display: 'flex',
@@ -2786,7 +2743,7 @@ function App() {
                                     marginLeft: 'auto'
                                   }}>
                                     {diff > 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-                                    <span>{diff > 0 ? 'Subiu' : 'Desceu'} {Math.abs(diff).toFixed(monthlyPlayerSortConfig.includes('media') ? 1 : 0)} {label}</span>
+                                    <span>{diff > 0 ? 'Subiu' : 'Desceu'} {Math.abs(diff).toFixed(1)}</span>
                                   </div>
                                 );
                               })()}
