@@ -2756,8 +2756,16 @@ function App() {
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', zIndex: 1 }}>
                             <span className="card-title" style={{ fontSize: 18, fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                               <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-muted)' }}>{p.displayRank}º</span>
-                              <span onClick={(e) => { e.stopPropagation(); setViewingPlayerId(p.id); setShowProfile(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} title="Ver perfil">
-                                <PlayerAvatar playerName={p.name} size={36} />
+                              <span 
+                                onClick={(e) => { e.stopPropagation(); setViewingPlayerId(p.id); setShowProfile(true); }} 
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} 
+                                title="Ver perfil"
+                              >
+                                <PlayerAvatar 
+                                  playerName={p.name} 
+                                  size={36} 
+                                  onClick={() => { setViewingPlayerId(p.id); setShowProfile(true); }}
+                                />
                                 <span style={{ transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = ''}>{p.name}</span>
                               </span>
                               {p.isGuest && <span style={{ fontSize: 10, backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', color: 'var(--text-muted)', marginLeft: 8 }}>Convidado</span>}
@@ -3128,8 +3136,16 @@ function App() {
                               {playerSortConfig !== 'alfabetica' && (
                                 <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-muted)' }}>{p.displayRank}º</span>
                               )}
-                              <span onClick={(e) => { e.stopPropagation(); setViewingPlayerId(p.id); setShowProfile(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} title="Ver perfil">
-                                <PlayerAvatar playerName={p.name} size={36} />
+                              <span 
+                                onClick={(e) => { e.stopPropagation(); setViewingPlayerId(p.id); setShowProfile(true); }} 
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} 
+                                title="Ver perfil"
+                              >
+                                <PlayerAvatar 
+                                  playerName={p.name} 
+                                  size={36} 
+                                  onClick={() => { setViewingPlayerId(p.id); setShowProfile(true); }}
+                                />
                                 <span style={{ transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = ''}>{p.name}</span>
                               </span>
                               {p.isGuest && <span style={{ fontSize: 10, backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', color: 'var(--text-muted)', marginLeft: 8 }}>Convidado</span>}
@@ -3391,8 +3407,16 @@ function App() {
                               {goleiroSortConfig !== 'alfabetica' && (
                                 <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-muted)' }}>{index + 1}º</span>
                               )}
-                              <span onClick={(e) => { e.stopPropagation(); setViewingPlayerId(p.id); setShowProfile(true); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} title="Ver perfil">
-                                <PlayerAvatar playerName={p.name} size={36} />
+                              <span 
+                                onClick={(e) => { e.stopPropagation(); setViewingPlayerId(p.id); setShowProfile(true); }} 
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} 
+                                title="Ver perfil"
+                              >
+                                <PlayerAvatar 
+                                  playerName={p.name} 
+                                  size={36} 
+                                  onClick={() => { setViewingPlayerId(p.id); setShowProfile(true); }}
+                                />
                                 <span style={{ transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = ''}>{p.name}</span>
                               </span>
                               {goleiroSortConfig === 'vitorias' && <span style={{ marginLeft: 8, fontSize: 16, color: 'var(--primary)', whiteSpace: 'nowrap' }}>🏆 {p.total_vitorias || 0}</span>}
@@ -3464,7 +3488,20 @@ function App() {
                               </div>
                             )}
                             <div className="hl-name" style={{ display: 'flex', flexDirection: hasMultiple ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: hasMultiple ? 6 : 8, width: '100%', flexWrap: 'wrap' }}>
-                              {val > 0 && !hasMultiple && <PlayerAvatar playerName={statObj.name} size={24} />}
+                              {val > 0 && !hasMultiple && (
+                                <PlayerAvatar 
+                                  playerName={statObj.name} 
+                                  size={24} 
+                                  onClick={() => {
+                                    const p = registeredPlayers.find(rp => (rp.name || '').trim().toLowerCase() === (statObj.name || '').trim().toLowerCase()) || 
+                                              registeredGoleiros.find(rg => (rg.name || '').trim().toLowerCase() === (statObj.name || '').trim().toLowerCase());
+                                    if (p) {
+                                      setViewingPlayerId(p.id);
+                                      setShowProfile(true);
+                                    }
+                                  }}
+                                />
+                              )}
                               <span
                                 style={{
                                   textAlign: 'center',
@@ -3708,7 +3745,20 @@ function App() {
                                 )}
 
                                 <div className="hl-name" style={{ display: 'flex', flexDirection: hasMultiple ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: hasMultiple ? 6 : 8, width: '100%', flexWrap: 'wrap' }}>
-                                  {val > 0 && !hasMultiple && <PlayerAvatar playerName={statObj.name} size={24} />}
+                                  {val > 0 && !hasMultiple && (
+                                    <PlayerAvatar 
+                                      playerName={statObj.name} 
+                                      size={24} 
+                                      onClick={() => {
+                                        const p = registeredPlayers.find(rp => (rp.name || '').trim().toLowerCase() === (statObj.name || '').trim().toLowerCase()) || 
+                                                  registeredGoleiros.find(rg => (rg.name || '').trim().toLowerCase() === (statObj.name || '').trim().toLowerCase());
+                                        if (p) {
+                                          setViewingPlayerId(p.id);
+                                          setShowProfile(true);
+                                        }
+                                      }}
+                                    />
+                                  )}
                                   <span
                                     style={{
                                       textAlign: 'center',
