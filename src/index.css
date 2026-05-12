@@ -34,6 +34,11 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+*:focus {
+  outline: none !important;
 }
 
 body {
@@ -797,6 +802,21 @@ h1, h2, h3, h4 {
 
 .slide-in-left {
   animation: slideInLeft 0.3s ease-out forwards;
+}
+
+/* Fix Recharts Focus Outlines */
+.recharts-wrapper, .recharts-surface, .recharts-layer {
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+svg {
+  outline: none !important;
+}
+
+.recharts-legend-item, .recharts-tooltip-wrapper {
+  outline: none !important;
 }
 
 /* Main Actions Bar */

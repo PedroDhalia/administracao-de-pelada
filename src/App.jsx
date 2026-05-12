@@ -1,43 +1,50 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Trophy, Users, Target, Plus, Minus, Trash2, User, Star, Info,
   Flag, Goal, Calendar, ChevronLeft, ChevronDown, ChevronUp, UserPlus, Flame, Medal, Circle, Pencil,
   LogOut, Shield, ShieldAlert, Key, Database, Camera, Hand, X, TrendingUp, TrendingDown
 } from 'lucide-react';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
+  Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis
 } from 'recharts';
 import './index.css';
 import './compare.css';
 
-// Firebase Imports
-import { initializeApp } from 'firebase/app';
-import { getDatabase, ref, onValue, set } from 'firebase/database';
+// Firebase
+import { ref, set } from 'firebase/database';
+import { db } from './api/firebase';
 
-// Firebase Config
-const firebaseConfig = {
-  apiKey: "AIzaSyBO79UYiZzSDFHjgWY_enw8oa0_w-1ik28",
-  authDomain: "pelada-selva.firebaseapp.com",
-  databaseURL: "https://pelada-selva-default-rtdb.firebaseio.com",
-  projectId: "pelada-selva",
-  storageBucket: "pelada-selva.firebasestorage.app",
-  messagingSenderId: "223113381758",
-  appId: "1:223113381758:web:c4dae5c4f355ede257552f",
-  measurementId: "G-9HL7V50FNJ"
-};
+// Constants & Utils
+import { CURRENT_FORMULA_VERSION, GENERATE_ID as generateId } from './constants';
+import { 
+  calculateSessionPlayerRatings, 
+  getMonthlyHighlights, 
+  getPlayerStatsForMonth, 
+  getPlayerStats, 
+  getPlayersStatsForMonth 
+} from './utils/calculations';
+import { getTextColor, getNotaColor, compressImage } from './utils/helpers';
 
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
-const generateId = () => Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
+// Hooks
+import { useDatabase } from './hooks/useDatabase';
+import { useAuth } from './hooks/useAuth';
 
-const CURRENT_FORMULA_VERSION = 4; // Increment this when formula changes
+// Components
+import PlayerAvatar from './components/common/PlayerAvatar';
+import SoccerField from './components/session/SoccerField';
+import AuthPage from './pages/Auth';
+import PlayerProfile from './pages/PlayerProfile';
+import PlayerBadges from './components/player/PlayerBadges';
 
 function App() {
-  const [sessions, setSessions] = useState([]);
-  const [registeredPlayers, setRegisteredPlayers] = useState([]);
-  const [registeredGoleiros, setRegisteredGoleiros] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [loggedInUserId, setLoggedInUserId] = useState(localStorage.getItem('selva_user_id') || null);
+  const { 
+    sessions, registeredPlayers, registeredGoleiros, users, 
+    isLoaded, dbError, updateSessionsAndStats 
+  } = useDatabase();
+  
+  const { loggedInUserId, login, logout } = useAuth();
+
   const [authMode, setAuthMode] = useState('login');
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showMatchesModal, setShowMatchesModal] = useState(false);
@@ -46,10 +53,7 @@ function App() {
   const [viewingPlayerId, setViewingPlayerId] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [dataSynced, setDataSynced] = useState(false);
-  const [dbError, setDbError] = useState(null);
-
+  // States que permanecem no App por enquanto para UI
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [showPlayersScreen, setShowPlayersScreen] = useState(false);
   const [showGoleirosScreen, setShowGoleirosScreen] = useState(false);
@@ -86,270 +90,7 @@ function App() {
     setShowInfoTooltip(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  useEffect(() => {
-    let timeout;
-    try {
-      const dbRef = ref(db, 'sessions');
-      const unsubscribeSessions = onValue(dbRef, (snapshot) => {
-        console.log("Sessions data received");
-        setDbError(null);
-        const data = snapshot.val();
-        if (data) {
-          const dataArray = Array.isArray(data) ? data : Object.values(data);
-          setSessions(dataArray);
-        } else {
-          const saved = localStorage.getItem('selva_data_v2');
-          if (saved) {
-            const parsed = JSON.parse(saved);
-            if (parsed && parsed.length > 0) {
-              set(dbRef, parsed);
-              setSessions(parsed);
-            } else {
-              setSessions([]);
-            }
-          } else {
-            setSessions([]);
-          }
-        }
-        setIsLoaded(true);
-      }, (error) => {
-        console.error("Firebase Sessions Error:", error);
-        setDbError(error.message);
-        setIsLoaded(true);
-      });
-
-      const playersRef = ref(db, 'players');
-      const unsubscribePlayers = onValue(playersRef, (snapshot) => {
-        const val = snapshot.val();
-        setRegisteredPlayers(Array.isArray(val) ? val : (val ? Object.values(val) : []));
-      }, (error) => {
-        console.error("Firebase Players Error:", error);
-        setDbError(error.message);
-      });
-
-      const usersRef = ref(db, 'users');
-      const unsubscribeUsers = onValue(usersRef, (snapshot) => {
-        const val = snapshot.val();
-        setUsers(Array.isArray(val) ? val : (val ? Object.values(val) : []));
-      }, (error) => {
-        console.error("Firebase Users Error:", error);
-        setDbError(error.message);
-      });
-
-      const goleirosRef = ref(db, 'goleiros');
-      const unsubscribeGoleiros = onValue(goleirosRef, (snapshot) => {
-        const val = snapshot.val();
-        setRegisteredGoleiros(Array.isArray(val) ? val : (val ? Object.values(val) : []));
-      }, (error) => {
-        console.error("Firebase Goleiros Error:", error);
-        setDbError(error.message);
-      });
-
-      // Fallback timeout to ensure app loads even if Firebase hangs
-      timeout = setTimeout(() => {
-        setIsLoaded(true);
-        console.warn("Firebase connection timeout - loading app anyway");
-      }, 4000);
-
-      return () => {
-        if (timeout) clearTimeout(timeout);
-        unsubscribeSessions();
-        unsubscribePlayers();
-        unsubscribeUsers();
-        unsubscribeGoleiros();
-      };
-    } catch (err) {
-      console.error("Critical initialization error:", err);
-      setIsLoaded(true);
-    }
-  }, []);
-
   const activeSession = sessions.find(s => s.id === activeSessionId);
-
-  const updateSessionsAndStats = (newSessionsList, currentPlayers = registeredPlayers, currentGoleiros = registeredGoleiros) => {
-    set(ref(db, 'sessions'), newSessionsList);
-
-    const statsByName = {};
-    const statsGoleiroByName = {};
-
-    newSessionsList.forEach(session => {
-      const teams = session.teams || [];
-      if (teams.length === 0) return;
-
-      const teamsWithPoints = teams.map(t => ({
-        ...t,
-        points: (t.wins || 0) * 3 + (t.draws || 0) * 1
-      })).sort((a, b) => b.points - a.points || (b.wins || 0) - (a.wins || 0));
-
-      let championTeamId = null;
-      if (teamsWithPoints.length > 0 && teamsWithPoints[0].points > 0) {
-        championTeamId = teamsWithPoints[0].id;
-      }
-
-      teams.forEach(team => {
-        const isWinner = team.id === championTeamId;
-        const players = team.players || [];
-        players.forEach(p => {
-          const normName = p.name.trim().toLowerCase();
-          if (!statsByName[normName]) {
-            statsByName[normName] = { goals: 0, assists: 0, wins: 0, matchesForNota: 0, artilheiroCount: 0, garcomCount: 0, mvpCount: 0, cleanSheetsCount: 0 };
-          }
-          statsByName[normName].goals += (p.goals || 0);
-          statsByName[normName].assists += (p.assists || 0);
-          if (isWinner) {
-            statsByName[normName].wins += 1;
-          }
-        });
-      });
-
-      // Calculate clean sheets per team for this session
-      const cleanSheetsByTeam = {};
-      if (session.matches) {
-        session.matches.forEach(m => {
-          if (!cleanSheetsByTeam[m.team1Id]) cleanSheetsByTeam[m.team1Id] = 0;
-          if (!cleanSheetsByTeam[m.team2Id]) cleanSheetsByTeam[m.team2Id] = 0;
-          if (m.score2 === 0) cleanSheetsByTeam[m.team1Id]++;
-          if (m.score1 === 0) cleanSheetsByTeam[m.team2Id]++;
-        });
-      }
-
-      // Accumulate clean sheets for defenders (globally)
-      teams.forEach(team => {
-        const teamCS = cleanSheetsByTeam[team.id] || 0;
-        if (teamCS > 0) {
-          const players = team.players || [];
-          players.forEach(p => {
-            const normName = p.name.trim().toLowerCase();
-            const rp = currentPlayers.find(reg => (reg.name || '').trim().toLowerCase() === normName);
-            if (rp?.posicao === 'Zagueiro') {
-              if (!statsByName[normName]) {
-                statsByName[normName] = { goals: 0, assists: 0, wins: 0, matchesForNota: 0, artilheiroCount: 0, garcomCount: 0, mvpCount: 0, cleanSheetsCount: 0 };
-              }
-              statsByName[normName].cleanSheetsCount += teamCS;
-            }
-          });
-        }
-      });
-
-      const allPlayersInSession = teams.flatMap(t => t.players || []);
-      const sessionMaxGoals = Math.max(0, ...allPlayersInSession.map(p => p.goals || 0));
-      const sessionMaxAssists = Math.max(0, ...allPlayersInSession.map(p => p.assists || 0));
-
-      const ratings = calculateSessionPlayerRatings(session);
-      const maxNota = ratings.length > 0 ? ratings[0].nota : 0;
-      const isInitialState = ratings.every(r => r.nota === 7.0);
-
-      ratings.forEach(r => {
-        const normName = r.name.trim().toLowerCase();
-        if (!statsByName[normName]) {
-          statsByName[normName] = { goals: 0, assists: 0, wins: 0, matchesForNota: 0, artilheiroCount: 0, garcomCount: 0, mvpCount: 0, cleanSheetsCount: 0 };
-        }
-        statsByName[normName].matchesForNota += 1;
-
-        if (sessionMaxGoals > 0 && (r.goals || 0) === sessionMaxGoals) {
-          statsByName[normName].artilheiroCount += 1;
-        }
-        if (sessionMaxAssists > 0 && (r.assists || 0) === sessionMaxAssists) {
-          statsByName[normName].garcomCount += 1;
-        }
-        if (!isInitialState && r.nota === maxNota && maxNota > 0) {
-          statsByName[normName].mvpCount += 1;
-        }
-      });
-
-      const goleiros = session.goleiros || [];
-      goleiros.forEach(g => {
-        const normName = g.name.trim().toLowerCase();
-        if (!statsGoleiroByName[normName]) {
-          statsGoleiroByName[normName] = { wins: 0, saves: 0 };
-        }
-        statsGoleiroByName[normName].wins += (g.wins || 0);
-        statsGoleiroByName[normName].saves += (g.saves || 0);
-      });
-    });
-
-    // Calculate raw scores for all players to enable global normalization
-    const playerStatsWithRaw = currentPlayers.map(p => {
-      const pName = p.name || '';
-      const normName = pName.trim().toLowerCase();
-      const s = statsByName[normName] || { goals: 0, assists: 0, wins: 0, matchesForNota: 0, artilheiroCount: 0, garcomCount: 0, mvpCount: 0, cleanSheetsCount: 0 };
-      // New Formula: Goals*5 + Assists*4 + Wins*1.5 + Artilheiro*1 + Garcom*1 + MVP*2 + CleanSheets*2
-      const rawScore = (s.goals * 5) + (s.assists * 4) + (s.wins * 1.5) + (s.artilheiroCount * 1) + (s.garcomCount * 1) + (s.mvpCount * 2) + (s.cleanSheetsCount * 2);
-      return { p, s, rawScore };
-    });
-
-    const allRawValues = playerStatsWithRaw.filter(x => x.s.matchesForNota > 0).map(x => x.rawScore);
-    const minRaw = allRawValues.length > 0 ? Math.min(...allRawValues) : 0;
-    const maxRaw = allRawValues.length > 0 ? Math.max(...allRawValues) : 0;
-
-    let changed = false;
-    const newPlayersList = playerStatsWithRaw.map(({ p, s, rawScore }) => {
-      let mediaCalculada = 0;
-      if (s.matchesForNota > 0) {
-        if (maxRaw !== minRaw) {
-          const normalized = (rawScore - minRaw) / (maxRaw - minRaw);
-          mediaCalculada = parseFloat((4 + (normalized * 6)).toFixed(2));
-        } else {
-          mediaCalculada = 7.0;
-        }
-      }
-
-      const currentVersion = p.formula_version || 0;
-
-      if (
-        (p.total_gols || 0) !== s.goals ||
-        (p.total_assistencias || 0) !== s.assists ||
-        (p.total_vitorias || 0) !== s.wins ||
-        (p.media_nota || 0) !== mediaCalculada ||
-        currentVersion < CURRENT_FORMULA_VERSION
-      ) {
-        changed = true;
-        return {
-          ...p,
-          total_gols: s.goals,
-          total_assistencias: s.assists,
-          total_vitorias: s.wins,
-          media_nota: mediaCalculada,
-          formula_version: CURRENT_FORMULA_VERSION
-        };
-      }
-      return p;
-    });
-
-    if (changed) {
-      set(ref(db, 'players'), newPlayersList);
-    }
-
-    let changedGoleiros = false;
-    const newGoleirosList = currentGoleiros.map(g => {
-      const normName = g.name.trim().toLowerCase();
-      const s = statsGoleiroByName[normName] || { wins: 0, saves: 0 };
-
-      if ((g.total_vitorias || 0) !== s.wins || (g.total_defesas_dificeis || 0) !== s.saves) {
-        changedGoleiros = true;
-        return { ...g, total_vitorias: s.wins, total_defesas_dificeis: s.saves };
-      }
-      return g;
-    });
-
-    if (changedGoleiros) {
-      set(ref(db, 'goleiros'), newGoleirosList);
-    }
-  };
-
-  useEffect(() => {
-    if (isLoaded && sessions.length > 0 && registeredPlayers.length > 0 && !dataSynced) {
-      const needsSync = registeredPlayers.some(p =>
-        p.total_gols === undefined ||
-        p.media_nota === undefined ||
-        (p.formula_version || 0) < CURRENT_FORMULA_VERSION
-      );
-      if (needsSync) {
-        updateSessionsAndStats(sessions);
-      }
-      setDataSynced(true);
-    }
-  }, [isLoaded, sessions, registeredPlayers, dataSynced]);
 
   const toggleTeam = (teamId) => {
     setExpandedTeams(prev => ({ ...prev, [teamId]: !prev[teamId] }));
@@ -364,20 +105,19 @@ function App() {
   const isGlobalAdmin = currentUser?.is_admin === true;
   const canEditSession = (session) => isGlobalAdmin || session?.admins?.includes(currentUser?.id) || false;
 
-  const handleLogin = (e) => {
+  const handleLoginSubmit = (e) => {
     e.preventDefault();
     const email = e.target.email.value.trim();
     const password = e.target.password.value.trim();
     const user = users.find(u => u.email === email && u.password === password);
     if (user) {
-      localStorage.setItem('selva_user_id', user.id);
-      setLoggedInUserId(user.id);
+      login(user.id);
     } else {
       alert("Credenciais inválidas");
     }
   };
 
-  const handleRegisterUser = (e) => {
+  const handleRegisterUserSubmit = (e) => {
     e.preventDefault();
     const name = e.target.name.value.trim();
     const email = e.target.email.value.trim();
@@ -395,12 +135,8 @@ function App() {
       is_admin: isFirstUser
     };
     set(ref(db, 'users'), [...users, newUser]);
-    localStorage.setItem('selva_user_id', newUser.id);
-    setLoggedInUserId(newUser.id);
+    login(newUser.id);
   };
-
-
-
 
   const handleChangePassword = (userId) => {
     const newPassword = prompt("Digite a nova senha para este usuário:");
@@ -448,8 +184,8 @@ function App() {
     if (!file) return;
     setIsUploading(true);
     try {
-      const compressedImage = await compressImage(file);
-      const newUsers = users.map(u => u.id === currentUser.id ? { ...u, avatar: compressedImage } : u);
+      const compressedImageResult = await compressImage(file);
+      const newUsers = users.map(u => u.id === currentUser.id ? { ...u, avatar: compressedImageResult } : u);
       set(ref(db, 'users'), newUsers);
     } catch (err) {
       alert("Erro ao enviar imagem");
@@ -462,89 +198,14 @@ function App() {
     set(ref(db, 'users'), newUsers);
   };
 
-  const compressImage = async (file) => {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target.result;
-        img.onload = () => {
-          const MAX_SIZE = 300;
-          let width = img.width;
-          let height = img.height;
-          if (width > height) {
-            if (width > MAX_SIZE) {
-              height *= MAX_SIZE / width;
-              width = MAX_SIZE;
-            }
-          } else {
-            if (height > MAX_SIZE) {
-              width *= MAX_SIZE / height;
-              height = MAX_SIZE;
-            }
-          }
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL('image/jpeg', 0.8));
-        };
-      };
-    });
-  };
-
-  const PlayerAvatar = ({ playerName, userId, size = 32, onClick }) => {
-    let avatarUrl = null;
-    let initial = '?';
-
-    // 1. Direct userId lookup (header, profile, admin panel)
-    if (userId) {
-      const u = users.find(us => us.id === userId);
-      if (u) {
-        initial = u.name.charAt(0).toUpperCase();
-        if (u.avatar) avatarUrl = u.avatar;
-      }
-    }
-
-    // 2. Player-name lookup (team lists, rankings)
-    if (!avatarUrl && playerName) {
-      initial = playerName.charAt(0).toUpperCase();
-      const rp = registeredPlayers.find(r => (r.name || '').trim().toLowerCase() === playerName.trim().toLowerCase()) ||
-                 registeredGoleiros.find(r => (r.name || '').trim().toLowerCase() === playerName.trim().toLowerCase());
-      if (rp && rp.userId) {
-        const u = users.find(us => us.id === rp.userId);
-        if (u && u.avatar) avatarUrl = u.avatar;
-      }
-    }
-
-    if (avatarUrl) {
-      return <img
-        src={avatarUrl}
-        alt={playerName || ''}
-        onClick={(e) => { 
-          if (onClick) {
-            onClick(e);
-          } else {
-            e.stopPropagation(); 
-            setSelectedAvatar(avatarUrl); 
-          }
-        }}
-        style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: '2px solid rgba(255,255,255,0.1)', cursor: 'pointer', boxSizing: 'border-box' }}
-        loading="lazy"
-      />;
-    }
-    return (
-      <div style={{ width: size, height: size, borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.1)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: size * 0.45, flexShrink: 0, border: '2px solid rgba(255,255,255,0.1)', boxSizing: 'border-box' }}>
-        {initial}
-      </div>
-    );
-  };
-
   const handleLogout = () => {
-    localStorage.removeItem('selva_user_id');
-    setLoggedInUserId(null);
+    logout();
+    setActiveSessionId(null);
+    setShowPlayersScreen(false);
+    setShowMonthlyStatsScreen(false);
+    setShowGoleirosScreen(false);
+    setShowProfile(false);
+    setViewingPlayerId(null);
   };
 
   const handleEditLinkedPlayerName = () => {
@@ -1177,18 +838,6 @@ function App() {
     return 'var(--primary)';
   };
 
-  const getTextColor = (bgColor) => {
-    const lightColors = ['#ffffff', '#eab308', '#fcd34d', 'var(--primary)', '#22c55e', '#4ade80'];
-    if (lightColors.includes(bgColor)) return '#0a140b';
-    return '#ffffff';
-  };
-
-  const getNotaColor = (nota) => {
-    if (nota >= 7.0) return '#22c55e'; // Verde
-    if (nota >= 5.5) return '#eab308'; // Amarelo
-    return '#ef4444'; // Vermelho
-  };
-
   const SoccerBallIcon = ({ color, size }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill={color} stroke="rgba(0,0,0,0.4)" strokeWidth="1">
       <circle cx="12" cy="12" r="10" />
@@ -1206,964 +855,9 @@ function App() {
     </svg>
   );
 
-  const calculateSessionPlayerRatings = (session) => {
-    if (!session || !session.teams || session.teams.length === 0) return [];
 
-    const cleanSheetsByTeam = {};
-    if (session.matches) {
-      session.matches.forEach(m => {
-        if (!cleanSheetsByTeam[m.team1Id]) cleanSheetsByTeam[m.team1Id] = 0;
-        if (!cleanSheetsByTeam[m.team2Id]) cleanSheetsByTeam[m.team2Id] = 0;
-        
-        if (m.score2 === 0) cleanSheetsByTeam[m.team1Id]++;
-        if (m.score1 === 0) cleanSheetsByTeam[m.team2Id]++;
-      });
-    }
 
-    let allPlayers = [];
-    session.teams.forEach(t => {
-      const pList = t.players || [];
-      const teamCleanSheets = cleanSheetsByTeam[t.id] || 0;
-      
-      pList.forEach(p => {
-        const pName = p.name || '';
-        const rp = registeredPlayers.find(reg => (reg.name || '').trim().toLowerCase() === pName.trim().toLowerCase());
-        const isZagueiro = rp?.posicao === 'Zagueiro';
-        
-        allPlayers.push({
-          ...p,
-          teamId: t.id,
-          teamName: t.name,
-          teamWins: t.wins || 0,
-          teamLosses: t.losses || 0,
-          cleanSheetsBonus: isZagueiro ? teamCleanSheets : 0
-        });
-      });
-    });
-
-    if (allPlayers.length === 0) return [];
-
-    allPlayers.forEach(p => {
-      // Session Rating Formula: Goals*5 + Assists*4 + Wins*1.5 + Losses*-1 + CleanSheetsBonus*2
-      p.rawScore = ((p.goals || 0) * 5) + ((p.assists || 0) * 4) + (p.teamWins * 1.5) + (p.teamLosses * -1) + (p.cleanSheetsBonus * 2);
-    });
-
-    const minScore = Math.min(...allPlayers.map(p => p.rawScore));
-    const maxScore = Math.max(...allPlayers.map(p => p.rawScore));
-
-    allPlayers.forEach(p => {
-      if (minScore === maxScore) {
-        p.nota = 7.0;
-      } else {
-        const normalized = (p.rawScore - minScore) / (maxScore - minScore);
-        p.nota = 4 + (normalized * 6);
-      }
-    });
-
-    allPlayers.sort((a, b) => b.nota - a.nota || (b.goals || 0) - (a.goals || 0) || (b.assists || 0) - (a.assists || 0));
-    return allPlayers;
-  };
-
-  const getMonthlyHighlights = () => {
-    const grouped = {};
-    sessions.forEach(s => {
-      if (!s.date || typeof s.date !== 'string') return;
-      const parts = s.date.split('/');
-      if (parts.length === 3) {
-        const monthYear = `${(parts[1] || '').padStart(2, '0')}/${parts[2]}`;
-        if (!grouped[monthYear]) grouped[monthYear] = [];
-        grouped[monthYear].push(s);
-      }
-    });
-
-    const results = [];
-    const sortedMonths = Object.keys(grouped).sort((a, b) => {
-      const [m1, y1] = a.split('/');
-      const [m2, y2] = b.split('/');
-      return new Date(y2, m2 - 1) - new Date(y1, m1 - 1);
-    });
-
-    const monthNames = {
-      "01": "Janeiro", "02": "Fevereiro", "03": "Março", "04": "Abril",
-      "05": "Maio", "06": "Junho", "07": "Julho", "08": "Agosto",
-      "09": "Setembro", "10": "Outubro", "11": "Novembro", "12": "Dezembro"
-    };
-
-    sortedMonths.forEach(monthKey => {
-      const monthSessions = grouped[monthKey];
-      const playerStats = {};
-
-      monthSessions.forEach(session => {
-        const teams = session.teams || [];
-        if (teams.length === 0) return;
-
-        const teamsWithPoints = teams.map(t => ({
-          ...t,
-          points: (t.wins || 0) * 3 + (t.draws || 0) * 1
-        })).sort((a, b) => b.points - a.points || (b.wins || 0) - (a.wins || 0));
-
-        let championTeamId = null;
-        if (teamsWithPoints.length > 0 && teamsWithPoints[0].points > 0) {
-          championTeamId = teamsWithPoints[0].id;
-        }
-
-        teams.forEach(team => {
-          const isChamp = team.id === championTeamId;
-          const players = team.players || [];
-          players.forEach(p => {
-            const pName = p.name || '';
-            const normName = pName.trim().toLowerCase();
-            if (!playerStats[normName]) {
-              playerStats[normName] = { name: p.name.trim(), goals: 0, assists: 0, champWins: 0, notaSum: 0, matchesForNota: 0, artilheiroCount: 0, garcomCount: 0, mvpCount: 0, cleanSheetsCount: 0 };
-            }
-            playerStats[normName].goals += (p.goals || 0);
-            playerStats[normName].assists += (p.assists || 0);
-            if (isChamp) {
-              playerStats[normName].champWins += 1;
-            }
-          });
-        });
-
-        // Calculate clean sheets per team for this session
-        const cleanSheetsByTeam = {};
-        if (session.matches) {
-          session.matches.forEach(m => {
-            if (!cleanSheetsByTeam[m.team1Id]) cleanSheetsByTeam[m.team1Id] = 0;
-            if (!cleanSheetsByTeam[m.team2Id]) cleanSheetsByTeam[m.team2Id] = 0;
-            if (m.score2 === 0) cleanSheetsByTeam[m.team1Id]++;
-            if (m.score1 === 0) cleanSheetsByTeam[m.team2Id]++;
-          });
-        }
-
-        // Accumulate clean sheets for defenders
-        teams.forEach(team => {
-          const teamCS = cleanSheetsByTeam[team.id] || 0;
-          if (teamCS > 0) {
-            const players = team.players || [];
-            players.forEach(p => {
-              const pName = p.name || '';
-              const normName = pName.trim().toLowerCase();
-              const rp = registeredPlayers.find(reg => (reg.name || '').trim().toLowerCase() === normName);
-              if (rp?.posicao === 'Zagueiro' && playerStats[normName]) {
-                playerStats[normName].cleanSheetsCount += teamCS;
-              }
-            });
-          }
-        });
-
-        const allPlayersInSession = teams.flatMap(t => t.players || []);
-        const sessionMaxGoals = Math.max(0, ...allPlayersInSession.map(p => p.goals || 0));
-        const sessionMaxAssists = Math.max(0, ...allPlayersInSession.map(p => p.assists || 0));
-
-        const ratings = calculateSessionPlayerRatings(session);
-        const maxNota = ratings.length > 0 ? ratings[0].nota : 0;
-        const isInitialState = ratings.every(r => r.nota === 7.0);
-
-        ratings.forEach(r => {
-          const normName = r.name.trim().toLowerCase();
-          if (playerStats[normName]) {
-            playerStats[normName].notaSum += r.nota;
-            playerStats[normName].matchesForNota += 1;
-
-            if (sessionMaxGoals > 0 && (r.goals || 0) === sessionMaxGoals) playerStats[normName].artilheiroCount = (playerStats[normName].artilheiroCount || 0) + 1;
-            if (sessionMaxAssists > 0 && (r.assists || 0) === sessionMaxAssists) playerStats[normName].garcomCount = (playerStats[normName].garcomCount || 0) + 1;
-            if (!isInitialState && r.nota === maxNota && maxNota > 0) playerStats[normName].mvpCount = (playerStats[normName].mvpCount || 0) + 1;
-          }
-        });
-      });
-
-      const playersWithRaw = Object.values(playerStats)
-        .filter(p => {
-          const pName = p.name || '';
-          const rp = registeredPlayers.find(rp => (rp.name || '').trim().toLowerCase() === pName.trim().toLowerCase());
-          return rp ? !rp.isGuest : true;
-        })
-        .map(p => ({
-          ...p,
-          // New Formula: Goals*5 + Assists*4 + Wins*1.5 + Artilheiro*1 + Garcom*1 + MVP*2 + CleanSheets*2
-          rawScore: (p.goals * 5) + (p.assists * 4) + (p.champWins * 1.5) + ((p.artilheiroCount || 0) * 1) + ((p.garcomCount || 0) * 1) + ((p.mvpCount || 0) * 2) + ((p.cleanSheetsCount || 0) * 2)
-        }));
-
-      const allRaw = playersWithRaw.map(x => x.rawScore);
-      const minRaw = allRaw.length > 0 ? Math.min(...allRaw) : 0;
-      const maxRaw = allRaw.length > 0 ? Math.max(...allRaw) : 0;
-
-      const playersArray = playersWithRaw.map(p => {
-        const rp = registeredPlayers.find(reg => (reg.name || '').trim().toLowerCase() === p.name.trim().toLowerCase());
-        let mvpScore = 0;
-        if (p.matchesForNota > 0) {
-          if (maxRaw !== minRaw) {
-            const normalized = (p.rawScore - minRaw) / (maxRaw - minRaw);
-            mvpScore = parseFloat((4 + (normalized * 6)).toFixed(2));
-          } else {
-            mvpScore = 7.0;
-          }
-        }
-        return { 
-          ...p, 
-          mvpScore,
-          id: rp?.id || p.name,
-          isGuest: rp ? rp.isGuest : true
-        };
-      });
-
-      if (playersArray.length > 0) {
-        const getTop = (arr, key) => {
-          const maxVal = Math.max(0, ...arr.map(p => p[key]));
-          if (maxVal === 0) return { name: '-', [key]: 0, tied: [] };
-          const tops = arr.filter(p => p[key] === maxVal);
-          let finalName = tops[0].name;
-          if (tops.length === 2) {
-            finalName = `${tops[0].name} e ${tops[1].name}`;
-          } else if (tops.length > 2) {
-            finalName = `${tops[0].name}, ${tops[1].name} e +${tops.length - 2}`;
-          }
-          return { name: finalName, [key]: maxVal, tied: tops };
-        };
-
-        const topScorer = getTop(playersArray, 'goals');
-        const topAssister = getTop(playersArray, 'assists');
-        const mvp = getTop(playersArray, 'mvpScore');
-        const topChamp = getTop(playersArray, 'champWins');
-
-        // Logic for "Time do Mês"
-        const getBestByPosition = (pos, count) => {
-          return playersArray
-            .filter(p => {
-              const pName = p.name || '';
-              const rp = registeredPlayers.find(reg => (reg.name || '').trim().toLowerCase() === pName.trim().toLowerCase());
-              return rp?.posicao === pos;
-            })
-            .sort((a, b) => b.mvpScore - a.mvpScore || (b.goals + b.assists) - (a.goals + a.assists))
-            .slice(0, count);
-        };
-
-        const teamOfMonth = {
-          zagueiros: getBestByPosition('Zagueiro', 2),
-          meia: getBestByPosition('Meia', 1),
-          atacantes: getBestByPosition('Atacante', 2)
-        };
-
-        const [mNum, yNum] = monthKey.split('/');
-        const labelText = `${monthNames[mNum]} ${yNum}`;
-
-        if (topScorer.goals > 0 || topAssister.assists > 0 || topChamp.champWins > 0) {
-          results.push({
-            monthKey,
-            label: labelText,
-            topScorer,
-            topAssister,
-            mvp,
-            topChamp,
-            teamOfMonth
-          });
-        }
-      }
-    });
-
-    return results;
-  };
-
-  const getPlayersStatsForMonth = (monthKey) => {
-    const grouped = {};
-    sessions.forEach(s => {
-      if (!s.date || typeof s.date !== 'string') return;
-      const parts = s.date.split('/');
-      if (parts.length === 3) {
-        const mY = `${(parts[1] || '').padStart(2, '0')}/${parts[2]}`;
-        if (!grouped[mY]) grouped[mY] = [];
-        grouped[mY].push(s);
-      }
-    });
-
-    const monthSessions = grouped[monthKey] || [];
-    const playerStats = {};
-
-    monthSessions.forEach(session => {
-      const teams = session.teams || [];
-      if (teams.length === 0) return;
-
-      const teamsWithPoints = teams.map(t => ({
-        ...t,
-        points: (t.wins || 0) * 3 + (t.draws || 0) * 1
-      })).sort((a, b) => b.points - a.points || (b.wins || 0) - (a.wins || 0));
-
-      let championTeamId = null;
-      if (teamsWithPoints.length > 0 && teamsWithPoints[0].points > 0) {
-        championTeamId = teamsWithPoints[0].id;
-      }
-
-      teams.forEach(team => {
-        const isChamp = team.id === championTeamId;
-        const players = team.players || [];
-        players.forEach(p => {
-          const pName = p.name || '';
-          const normName = pName.trim().toLowerCase();
-          if (!playerStats[normName]) {
-            playerStats[normName] = {
-              name: p.name.trim(),
-              total_gols: 0,
-              total_assistencias: 0,
-              total_vitorias: 0,
-              notaSum: 0,
-              matchesForNota: 0,
-              artilheiroCount: 0,
-              garcomCount: 0,
-              mvpCount: 0,
-              cleanSheetsCount: 0
-            };
-          }
-          playerStats[normName].total_gols += (p.goals || 0);
-          playerStats[normName].total_assistencias += (p.assists || 0);
-          if (isChamp) {
-            playerStats[normName].total_vitorias += 1;
-          }
-        });
-      });
-
-      // Calculate clean sheets per team for this session
-      const cleanSheetsByTeam = {};
-      if (session.matches) {
-        session.matches.forEach(m => {
-          if (!cleanSheetsByTeam[m.team1Id]) cleanSheetsByTeam[m.team1Id] = 0;
-          if (!cleanSheetsByTeam[m.team2Id]) cleanSheetsByTeam[m.team2Id] = 0;
-          if (m.score2 === 0) cleanSheetsByTeam[m.team1Id]++;
-          if (m.score1 === 0) cleanSheetsByTeam[m.team2Id]++;
-        });
-      }
-
-      // Accumulate clean sheets for defenders
-      teams.forEach(team => {
-        const teamCS = cleanSheetsByTeam[team.id] || 0;
-        if (teamCS > 0) {
-          const players = team.players || [];
-          players.forEach(p => {
-            const pName = p.name || '';
-            const normName = pName.trim().toLowerCase();
-            const rp = registeredPlayers.find(reg => (reg.name || '').trim().toLowerCase() === normName);
-            if (rp?.posicao === 'Zagueiro' && playerStats[normName]) {
-              playerStats[normName].cleanSheetsCount += teamCS;
-            }
-          });
-        }
-      });
-
-      const allPlayersInSession = teams.flatMap(t => t.players || []);
-      const sessionMaxGoals = Math.max(0, ...allPlayersInSession.map(p => p.goals || 0));
-      const sessionMaxAssists = Math.max(0, ...allPlayersInSession.map(p => p.assists || 0));
-
-      const ratings = calculateSessionPlayerRatings(session);
-      const maxNota = ratings.length > 0 ? ratings[0].nota : 0;
-      const isInitialState = ratings.every(r => r.nota === 7.0);
-
-      ratings.forEach(r => {
-        const normName = r.name.trim().toLowerCase();
-        if (playerStats[normName]) {
-          playerStats[normName].notaSum += r.nota;
-          playerStats[normName].matchesForNota += 1;
-
-          if (sessionMaxGoals > 0 && (r.goals || 0) === sessionMaxGoals) playerStats[normName].artilheiroCount += 1;
-          if (sessionMaxAssists > 0 && (r.assists || 0) === sessionMaxAssists) playerStats[normName].garcomCount += 1;
-          if (!isInitialState && r.nota === maxNota && maxNota > 0) playerStats[normName].mvpCount += 1;
-        }
-      });
-    });
-
-    const playersWithRaw = Object.values(playerStats).map(p => ({
-      ...p,
-      // New Formula: Goals*5 + Assists*4 + Wins*1.5 + Artilheiro*1 + Garcom*1 + MVP*2 + CleanSheets*2
-      rawScore: ((p.total_gols || 0) * 5) + ((p.total_assistencias || 0) * 4) + ((p.total_vitorias || 0) * 1.5) + ((p.artilheiroCount || 0) * 1) + ((p.garcomCount || 0) * 1) + ((p.mvpCount || 0) * 2) + ((p.cleanSheetsCount || 0) * 2)
-    }));
-
-    const allRaw = playersWithRaw.map(x => x.rawScore);
-    const minRaw = allRaw.length > 0 ? Math.min(...allRaw) : 0;
-    const maxRaw = allRaw.length > 0 ? Math.max(...allRaw) : 0;
-
-    return playersWithRaw.map(p => {
-      const rp = registeredPlayers.find(rp => rp.name.trim().toLowerCase() === p.name.trim().toLowerCase());
-      let mediaCalculada = 0;
-      if (p.matchesForNota > 0) {
-        if (maxRaw !== minRaw) {
-          const normalized = (p.rawScore - minRaw) / (maxRaw - minRaw);
-          mediaCalculada = parseFloat((4 + (normalized * 6)).toFixed(2));
-        } else {
-          mediaCalculada = 7.0;
-        }
-      }
-      return {
-        ...p,
-        id: rp ? rp.id : generateId(),
-        media_nota: mediaCalculada,
-        isGuest: rp?.isGuest || false
-      };
-    });
-  };
-
-  const getPlayerStats = (playerName) => {
-    let peladasJogadas = 0;
-    let totalGoals = 0;
-    let totalAssists = 0;
-    let peladasGanhas = 0;
-    let artilheiroCount = 0;
-    let garcomCount = 0;
-    let mvpCount = 0;
-    let puskasWins = 0;
-    let matchHistory = [];
-
-    const pNameForStats = playerName || '';
-    const normName = pNameForStats.trim().toLowerCase();
-
-    sessions.forEach(session => {
-      if (session.puskas && typeof session.puskas === 'string' && session.puskas.trim().toLowerCase() === normName) {
-        puskasWins++;
-      }
-
-      const teams = session.teams || [];
-      if (teams.length === 0) return;
-
-      const teamsWithPoints = teams.map(t => ({
-        ...t,
-        points: (t.wins || 0) * 3 + (t.draws || 0) * 1
-      })).sort((a, b) => b.points - a.points || (b.wins || 0) - (a.wins || 0));
-
-      let championTeamId = null;
-      if (teamsWithPoints.length > 0 && teamsWithPoints[0].points > 0) {
-        championTeamId = teamsWithPoints[0].id;
-      }
-
-      let playedInSession = false;
-      let wonThisSession = false;
-
-      const sessionMaxGoals = Math.max(0, ...teams.flatMap(t => t.players || []).map(p => p.goals || 0));
-      const sessionMaxAssists = Math.max(0, ...teams.flatMap(t => t.players || []).map(p => p.assists || 0));
-
-      teams.forEach(team => {
-        const players = team.players || [];
-        const playerInTeam = players.find(p => (p.name || '').trim().toLowerCase() === normName);
-        if (playerInTeam) {
-          playedInSession = true;
-          const playerGoals = playerInTeam.goals || 0;
-          const playerAssists = playerInTeam.assists || 0;
-          totalGoals += playerGoals;
-          totalAssists += playerAssists;
-
-          if (playerGoals > 0 && playerGoals === sessionMaxGoals) {
-            artilheiroCount++;
-          }
-          if (playerAssists > 0 && playerAssists === sessionMaxAssists) {
-            garcomCount++;
-          }
-
-          if (team.id === championTeamId) {
-            wonThisSession = true;
-          }
-        }
-      });
-
-      if (playedInSession) {
-        peladasJogadas++;
-        if (wonThisSession) peladasGanhas++;
-
-        const ratings = calculateSessionPlayerRatings(session);
-        const playerRating = ratings.find(r => (r.name || '').trim().toLowerCase() === normName);
-
-        if (ratings && ratings.length > 0) {
-          const maxNota = ratings[0].nota;
-          const isInitialState = ratings.every(r => r.nota === 7.0);
-          if (playerRating && playerRating.nota === maxNota && !isInitialState) {
-            mvpCount++;
-          }
-        }
-
-        if (playerRating) {
-          matchHistory.push({
-            sessionId: session.id,
-            sessionName: session.name || 'Pelada',
-            sessionDate: session.date || '',
-            nota: playerRating.nota,
-            goals: playerRating.goals || 0,
-            assists: playerRating.assists || 0
-          });
-        }
-      }
-    });
-
-    const goalAvg = peladasJogadas > 0 ? (totalGoals / peladasJogadas).toFixed(2) : '0.00';
-    const assistAvg = peladasJogadas > 0 ? (totalAssists / peladasJogadas).toFixed(2) : '0.00';
-    const winRate = peladasJogadas > 0 ? Math.round((peladasGanhas / peladasJogadas) * 100) : 0;
-
-    return {
-      peladasJogadas,
-      totalGoals,
-      totalAssists,
-      peladasGanhas,
-      goalAvg,
-      assistAvg,
-      winRate,
-      artilheiroCount,
-      garcomCount,
-      mvpCount,
-      puskasWins,
-      matchHistory
-    };
-  };
-
-  // Version of getPlayerStats filtered by month key (e.g. "05/2026")
-  const getPlayerStatsForMonth = (playerName, monthKey) => {
-    let peladasJogadas = 0;
-    let totalGoals = 0;
-    let totalAssists = 0;
-    let peladasGanhas = 0;
-    let artilheiroCount = 0;
-    let garcomCount = 0;
-    let mvpCount = 0;
-    let puskasWins = 0;
-    let matchHistory = [];
-
-    const pNameForStats = playerName || '';
-    const normName = pNameForStats.trim().toLowerCase();
-
-    // Filter sessions by monthKey
-    const monthSessions = sessions.filter(s => {
-      if (!s.date || typeof s.date !== 'string') return false;
-      const parts = s.date.split('/');
-      if (parts.length !== 3) return false;
-      const mY = `${(parts[1] || '').padStart(2, '0')}/${parts[2]}`;
-      return mY === monthKey;
-    });
-
-    monthSessions.forEach(session => {
-      if (session.puskas && typeof session.puskas === 'string' && session.puskas.trim().toLowerCase() === normName) {
-        puskasWins++;
-      }
-
-      const teams = session.teams || [];
-      if (teams.length === 0) return;
-
-      const teamsWithPoints = teams.map(t => ({
-        ...t,
-        points: (t.wins || 0) * 3 + (t.draws || 0) * 1
-      })).sort((a, b) => b.points - a.points || (b.wins || 0) - (a.wins || 0));
-
-      let championTeamId = null;
-      if (teamsWithPoints.length > 0 && teamsWithPoints[0].points > 0) {
-        championTeamId = teamsWithPoints[0].id;
-      }
-
-      let playedInSession = false;
-      let wonThisSession = false;
-
-      const sessionMaxGoals = Math.max(0, ...teams.flatMap(t => t.players || []).map(p => p.goals || 0));
-      const sessionMaxAssists = Math.max(0, ...teams.flatMap(t => t.players || []).map(p => p.assists || 0));
-
-      teams.forEach(team => {
-        const players = team.players || [];
-        const playerInTeam = players.find(p => (p.name || '').trim().toLowerCase() === normName);
-        if (playerInTeam) {
-          playedInSession = true;
-          const playerGoals = playerInTeam.goals || 0;
-          const playerAssists = playerInTeam.assists || 0;
-          totalGoals += playerGoals;
-          totalAssists += playerAssists;
-
-          if (playerGoals > 0 && playerGoals === sessionMaxGoals) {
-            artilheiroCount++;
-          }
-          if (playerAssists > 0 && playerAssists === sessionMaxAssists) {
-            garcomCount++;
-          }
-
-          if (team.id === championTeamId) {
-            wonThisSession = true;
-          }
-        }
-      });
-
-      if (playedInSession) {
-        peladasJogadas++;
-        if (wonThisSession) peladasGanhas++;
-
-        const ratings = calculateSessionPlayerRatings(session);
-        const playerRating = ratings.find(r => (r.name || '').trim().toLowerCase() === normName);
-
-        if (ratings && ratings.length > 0) {
-          const maxNota = ratings[0].nota;
-          const isInitialState = ratings.every(r => r.nota === 7.0);
-          if (playerRating && playerRating.nota === maxNota && !isInitialState) {
-            mvpCount++;
-          }
-        }
-
-        if (playerRating) {
-          matchHistory.push({
-            sessionId: session.id,
-            sessionName: session.name || 'Pelada',
-            sessionDate: session.date || '',
-            nota: playerRating.nota,
-            goals: playerRating.goals || 0,
-            assists: playerRating.assists || 0
-          });
-        }
-      }
-    });
-
-    const goalAvg = peladasJogadas > 0 ? (totalGoals / peladasJogadas).toFixed(2) : '0.00';
-    const assistAvg = peladasJogadas > 0 ? (totalAssists / peladasJogadas).toFixed(2) : '0.00';
-    const winRate = peladasJogadas > 0 ? Math.round((peladasGanhas / peladasJogadas) * 100) : 0;
-
-    return {
-      peladasJogadas,
-      totalGoals,
-      totalAssists,
-      peladasGanhas,
-      goalAvg,
-      assistAvg,
-      winRate,
-      artilheiroCount,
-      garcomCount,
-      mvpCount,
-      puskasWins,
-      matchHistory
-    };
-  };
-
-  // renderPlayerBadges for monthly context - shows only stats from that month
-  const renderPlayerBadgesForMonth = (playerName, monthKey, isPodium = false) => {
-    if (!playerName) return null;
-    const stats = getPlayerStatsForMonth(playerName, monthKey);
-    const hasBadges = stats.artilheiroCount > 0 || stats.garcomCount > 0 || stats.mvpCount > 0 || stats.puskasWins > 0 || (playerName.trim().toLowerCase() === 'digaum' && monthKey === '05/2026');
-
-    if (isPodium) {
-      return (
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '4px', marginBottom: '8px', maxWidth: '100%', padding: '0 4px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(255,255,255,0.05)', padding: '2px 4px', borderRadius: '4px', fontSize: 10 }} title={"Vitorias: " + (stats.peladasGanhas || 0) + " | Win Rate: " + (stats.winRate || 0) + "%"}>
-            <Trophy size={10} color="#eab308" />
-            <strong style={{ color: '#eab308' }}>{(stats.peladasGanhas || 0)}V ({(stats.winRate || 0)}%)</strong>
-          </div>
-          {stats.artilheiroCount > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 4px', borderRadius: '4px', fontSize: 10 }} title="Artilheiro">
-              <span>⚽</span><strong style={{ color: 'var(--text-main)' }}>{stats.artilheiroCount}x</strong>
-            </div>
-          )}
-          {stats.garcomCount > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 4px', borderRadius: '4px', fontSize: 10 }} title="Garçom">
-              <span>🎯</span><strong style={{ color: 'var(--text-main)' }}>{stats.garcomCount}x</strong>
-            </div>
-          )}
-          {stats.mvpCount > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(234, 179, 8, 0.2)', padding: '2px 4px', borderRadius: '4px', border: '1px solid rgba(234, 179, 8, 0.3)', fontSize: 10 }} title="MVP">
-              <span>⭐</span><strong style={{ color: '#eab308' }}>{stats.mvpCount}x</strong>
-            </div>
-          )}
-          {stats.puskasWins > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(234, 179, 8, 0.2)', padding: '2px 4px', borderRadius: '4px', border: '1px solid rgba(234, 179, 8, 0.3)', fontSize: 10 }} title="Puskas">
-              <span>👟</span><strong style={{ color: '#eab308' }}>{stats.puskasWins}x</strong>
-            </div>
-          )}
-          {playerName.trim().toLowerCase() === 'digaum' && monthKey === '05/2026' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(239, 68, 68, 0.2)', padding: '2px 4px', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.3)', fontSize: 10 }} title="Gol Contra">
-              <span>❌</span><strong style={{ color: '#ef4444' }}>1x</strong>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    return (
-      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: '8px', fontSize: 14, color: 'var(--text-muted)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <Trophy size={16} color="#eab308" />
-          <span>Vitorias: <strong style={{ color: '#eab308' }}>{stats.peladasGanhas || 0}</strong> | Win Rate: <strong style={{ color: '#eab308' }}>{stats.winRate || 0}%</strong></span>
-        </div>
-
-        {hasBadges && (
-          <div style={{ width: '1px', height: '14px', backgroundColor: 'rgba(255,255,255,0.1)', margin: '0 4px' }}></div>
-        )}
-
-        {stats.artilheiroCount > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: '4px' }} title="Artilheiro (Mais gols numa pelada)">
-            <span style={{ fontSize: 14 }}>⚽</span>
-            <span style={{ fontSize: 12, color: 'var(--text-main)' }}>Artilheiro</span>
-            <span style={{ fontWeight: 'bold', color: 'var(--text-main)', fontSize: 12 }}>{stats.artilheiroCount}x</span>
-          </div>
-        )}
-
-        {stats.garcomCount > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: '4px' }} title="Garçom (Mais assistências numa pelada)">
-            <span style={{ fontSize: 14 }}>🎯</span>
-            <span style={{ fontSize: 12, color: 'var(--text-main)' }}>Garçom</span>
-            <span style={{ fontWeight: 'bold', color: 'var(--text-main)', fontSize: 12 }}>{stats.garcomCount}x</span>
-          </div>
-        )}
-
-        {stats.mvpCount > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(234, 179, 8, 0.2)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(234, 179, 8, 0.3)' }} title="MVP (Maior nota na pelada)">
-            <span style={{ fontSize: 14 }}>⭐</span>
-            <span style={{ fontSize: 12, color: '#eab308' }}>MVP</span>
-            <span style={{ fontWeight: 'bold', color: '#eab308', fontSize: 12 }}>{stats.mvpCount}x</span>
-          </div>
-        )}
-
-        {stats.puskasWins > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(234, 179, 8, 0.2)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(234, 179, 8, 0.3)' }} title="Prêmio Puskas (Melhor Gol)">
-            <span style={{ fontSize: 14 }}>👟</span>
-            <span style={{ fontSize: 12, color: '#eab308' }}>Puskas</span>
-            <span style={{ fontWeight: 'bold', color: '#eab308', fontSize: 12 }}>{stats.puskasWins}x</span>
-          </div>
-        )}
-
-        {playerName.trim().toLowerCase() === 'digaum' && monthKey === '05/2026' && (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(239, 68, 68, 0.2)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.3)' }} title="Gol Contra (Maio 2026)">
-              <span style={{ fontSize: 14 }}>❌</span>
-              <span style={{ fontSize: 12, color: '#ef4444' }}>Gol Contra</span>
-              <span style={{ fontWeight: 'bold', color: '#ef4444', fontSize: 12 }}>1x</span>
-            </div>
-          </>
-        )}
-      </div>
-    );
-  };
-
-  const renderPlayerBadges = (playerName, isPodium = false) => {
-    if (!playerName) return null;
-    const stats = getPlayerStats(playerName);
-    const hasBadges = stats.artilheiroCount > 0 || stats.garcomCount > 0 || stats.mvpCount > 0 || stats.puskasWins > 0 || playerName.trim().toLowerCase() === 'digaum';
-
-    if (isPodium) {
-      return (
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '4px', marginBottom: '8px', maxWidth: '100%', padding: '0 4px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(255,255,255,0.05)', padding: '2px 4px', borderRadius: '4px', fontSize: 10 }} title={"Vitorias: " + (stats.peladasGanhas || 0) + " | Win Rate: " + (stats.winRate || 0) + "%"}>
-            <Trophy size={10} color="#eab308" />
-            <strong style={{ color: '#eab308' }}>{(stats.peladasGanhas || 0)}V ({(stats.winRate || 0)}%)</strong>
-          </div>
-          {stats.artilheiroCount > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 4px', borderRadius: '4px', fontSize: 10 }} title="Artilheiro">
-              <span>⚽</span><strong style={{ color: 'var(--text-main)' }}>{stats.artilheiroCount}x</strong>
-            </div>
-          )}
-          {stats.garcomCount > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 4px', borderRadius: '4px', fontSize: 10 }} title="Garçom">
-              <span>🎯</span><strong style={{ color: 'var(--text-main)' }}>{stats.garcomCount}x</strong>
-            </div>
-          )}
-          {stats.mvpCount > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(234, 179, 8, 0.2)', padding: '2px 4px', borderRadius: '4px', border: '1px solid rgba(234, 179, 8, 0.3)', fontSize: 10 }} title="MVP">
-              <span>⭐</span><strong style={{ color: '#eab308' }}>{stats.mvpCount}x</strong>
-            </div>
-          )}
-          {stats.puskasWins > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(234, 179, 8, 0.2)', padding: '2px 4px', borderRadius: '4px', border: '1px solid rgba(234, 179, 8, 0.3)', fontSize: 10 }} title="Puskas">
-              <span>👟</span><strong style={{ color: '#eab308' }}>{stats.puskasWins}x</strong>
-            </div>
-          )}
-          {playerName.trim().toLowerCase() === 'digaum' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(239, 68, 68, 0.2)', padding: '2px 4px', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.3)', fontSize: 10 }} title="Gol Contra">
-              <span>❌</span><strong style={{ color: '#ef4444' }}>2x</strong>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    return (
-      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: '8px', fontSize: 14, color: 'var(--text-muted)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <Trophy size={16} color="#eab308" />
-          <span>Vitorias: <strong style={{ color: '#eab308' }}>{stats.peladasGanhas || 0}</strong> | Win Rate: <strong style={{ color: '#eab308' }}>{stats.winRate || 0}%</strong></span>
-        </div>
-
-        {hasBadges && (
-          <div style={{ width: '1px', height: '14px', backgroundColor: 'rgba(255,255,255,0.1)', margin: '0 4px' }}></div>
-        )}
-
-        {stats.artilheiroCount > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: '4px' }} title="Artilheiro (Mais gols numa pelada)">
-            <span style={{ fontSize: 14 }}>⚽</span>
-            <span style={{ fontSize: 12, color: 'var(--text-main)' }}>Artilheiro</span>
-            <span style={{ fontWeight: 'bold', color: 'var(--text-main)', fontSize: 12 }}>{stats.artilheiroCount}x</span>
-          </div>
-        )}
-
-        {stats.garcomCount > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: '4px' }} title="Garçom (Mais assistências numa pelada)">
-            <span style={{ fontSize: 14 }}>🎯</span>
-            <span style={{ fontSize: 12, color: 'var(--text-main)' }}>Garçom</span>
-            <span style={{ fontWeight: 'bold', color: 'var(--text-main)', fontSize: 12 }}>{stats.garcomCount}x</span>
-          </div>
-        )}
-
-        {stats.mvpCount > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(234, 179, 8, 0.2)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(234, 179, 8, 0.3)' }} title="MVP (Maior nota na pelada)">
-            <span style={{ fontSize: 14 }}>⭐</span>
-            <span style={{ fontSize: 12, color: '#eab308' }}>MVP</span>
-            <span style={{ fontWeight: 'bold', color: '#eab308', fontSize: 12 }}>{stats.mvpCount}x</span>
-          </div>
-        )}
-
-        {stats.puskasWins > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(234, 179, 8, 0.2)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(234, 179, 8, 0.3)' }} title="Prêmio Puskas (Melhor Gol)">
-            <span style={{ fontSize: 14 }}>👟</span>
-            <span style={{ fontSize: 12, color: '#eab308' }}>Puskas</span>
-            <span style={{ fontWeight: 'bold', color: '#eab308', fontSize: 12 }}>{stats.puskasWins}x</span>
-          </div>
-        )}
-
-        {playerName.trim().toLowerCase() === 'digaum' && (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(239, 68, 68, 0.2)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.3)' }} title="Gol Contra">
-              <span style={{ fontSize: 14 }}>❌</span>
-              <span style={{ fontSize: 12, color: '#ef4444' }}>Gol Contra</span>
-              <span style={{ fontWeight: 'bold', color: '#ef4444', fontSize: 12 }}>2x</span>
-            </div>
-          </>
-        )}
-      </div>
-    );
-  };
-
-  const renderFormation = (players, type, sourceRatings, isHighlights = false) => {
-    const count = players.length;
-    if (count === 0) return <div style={{ height: 60 }}></div>;
-
-    // Detect session-wide max nota for MVP badge
-    const allRatings = sourceRatings.length > 0 ? sourceRatings : (players.map(p => ({ name: p.name, nota: p.mvpScore || 0 })));
-    const maxNota = Math.max(...allRatings.map(r => r.nota || 0));
-
-    // Only show MVP if there's differentiation (not everyone 7.0)
-    const isInitialState = allRatings.every(r => r.nota === 7.0);
-    const showMVP = !isInitialState && maxNota > 0;
-
-    return (
-      <div className="field-row" style={{ position: 'relative', gap: '15px' }}>
-        {players.map((p, idx) => {
-          let style = { transition: 'all 0.3s ease' };
-          let nota = 0;
-          if (p.mvpScore !== undefined) {
-            nota = p.mvpScore;
-          } else {
-            const pName = p.name || '';
-            const r = sourceRatings.find(sr => (sr.name || '').trim().toLowerCase() === pName.trim().toLowerCase());
-            nota = r ? r.nota : 0;
-          }
-
-          const isMVP = nota > 0 && nota === maxNota;
-
-          if (type === 'Atacante') {
-            if (count === 3) {
-              if (idx === 1) style.transform = 'translateY(-15px)';
-              else style.transform = 'translateY(10px)';
-            } else if (count === 4) {
-              // Recess attackers a bit more down for better spacing
-              if (idx === 1 || idx === 2) style.transform = 'translateY(-10px)';
-              else {
-                style.transform = 'translateY(25px)';
-                style.margin = '0 10px';
-              }
-            }
-          } else if (type === 'Meia') {
-            if (count === 3) {
-              if (idx === 1) style.transform = 'translateY(20px)';
-              else style.transform = 'translateY(-10px)';
-            }
-          } else if (type === 'Zagueiro') {
-            if (count === 3) {
-              if (idx === 1) style.transform = 'translateY(15px)';
-              else style.transform = 'translateY(-10px)';
-            } else if (count === 4) {
-              if (idx === 1 || idx === 2) style.transform = 'translateY(15px)';
-              else style.transform = 'translateY(-15px)';
-            }
-          }
-
-          const hasGoals = p.goals > 0;
-          const hasAssists = p.assists > 0;
-
-          return (
-            <div
-              key={p.id || p.name}
-              className="field-player"
-              style={{ ...style, cursor: 'pointer' }}
-              onClick={() => {
-                const pObj = registeredPlayers.find(rp => (rp.name || '').trim().toLowerCase() === (p.name || '').trim().toLowerCase()) ||
-                             registeredGoleiros.find(rg => (rg.name || '').trim().toLowerCase() === (p.name || '').trim().toLowerCase());
-                if (pObj) {
-                  setViewingPlayerId(pObj.id);
-                  setShowProfile(true);
-                }
-              }}
-              title="Ver perfil"
-            >
-              <div style={{ position: 'relative', width: 45, height: 45, margin: '0 auto' }}>
-                <PlayerAvatar 
-                  playerName={p.name} 
-                  size={45} 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const pObj = registeredPlayers.find(rp => (rp.name || '').trim().toLowerCase() === (p.name || '').trim().toLowerCase()) ||
-                                 registeredGoleiros.find(rg => (rg.name || '').trim().toLowerCase() === (p.name || '').trim().toLowerCase());
-                    if (pObj) {
-                      setViewingPlayerId(pObj.id);
-                      setShowProfile(true);
-                    }
-                  }}
-                />
-
-                {/* MVP Star - Standardized Position */}
-                {!isHighlights && showMVP && isMVP && (
-                  <div style={{
-                    position: 'absolute', top: -2, left: -8,
-                    width: 16, height: 16, borderRadius: '50%',
-                    backgroundColor: '#3b82f6', border: '1.5px solid #fff',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    zIndex: 12, boxShadow: '0 2px 4px rgba(0,0,0,0.4)'
-                  }}>
-                    <Star size={10} color="#fff" fill="#fff" />
-                  </div>
-                )}
-
-                {/* Goals Badge - Standardized Position (Align left to grow right) */}
-                {!isHighlights && hasGoals && (
-                  <div style={{
-                    position: 'absolute', top: -4, left: 38,
-                    display: 'flex', alignItems: 'center', gap: '2px',
-                    zIndex: 11, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))'
-                  }}>
-                    <span style={{ fontSize: '13px' }}>⚽</span>
-                    {p.goals > 1 && <span style={{ fontSize: '10px', fontWeight: '900', color: '#fff', textShadow: '0 0 2px #000' }}>{p.goals}</span>}
-                  </div>
-                )}
-
-                {/* Assists Badge - Slot 1 if no goals, else Slot 2 (Bottom) */}
-                {!isHighlights && hasAssists && (
-                  <div style={{
-                    position: 'absolute', top: hasGoals ? 14 : -4, left: 38,
-                    display: 'flex', alignItems: 'center', gap: '2px',
-                    zIndex: 11, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))'
-                  }}>
-                    <span style={{ fontSize: '13px' }}>🎯</span>
-                    {p.assists > 1 && <span style={{ fontSize: '10px', fontWeight: '900', color: '#fff', textShadow: '0 0 2px #000' }}>{p.assists}</span>}
-                  </div>
-                )}
-              </div>
-
-              <span className="field-player-name" style={{ marginTop: '14px', fontSize: '10px' }}>{p.name}</span>
-              <span className="field-player-nota" style={{
-                backgroundColor: getNotaColor(nota),
-                color: getTextColor(getNotaColor(nota)),
-                boxShadow: (!isHighlights && showMVP && isMVP) ? '0 0 10px rgba(59, 130, 246, 0.6)' : 'none',
-                zIndex: 10,
-                fontSize: '10px',
-                padding: '2px 6px'
-              }}>{nota.toFixed(1)}</span>
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
-  const allHighlights = !activeSessionId ? getMonthlyHighlights() : [];
+  const allHighlights = useMemo(() => getMonthlyHighlights(sessions, registeredPlayers), [sessions, registeredPlayers]);
 
   if (!isLoaded) {
     return (
@@ -2174,87 +868,23 @@ function App() {
   }
 
 
-  if (!loggedInUserId) {
+  if (!loggedInUserId || (currentUser && !currentUser.jogadorId)) {
     return (
-      <div className="app-container" style={{ justifyContent: 'center', alignItems: 'center' }}>
-        <div className="card animated" style={{ padding: 32, width: '100%', maxWidth: 400 }}>
-          <div style={{ textAlign: 'center', marginBottom: 24 }}>
-            <img src="/logo.png" alt="Logo" style={{ width: 80, height: 80, marginBottom: 16 }} />
-            <h2 style={{ color: 'var(--primary)', margin: 0 }}>{authMode === 'login' ? 'Entrar' : 'Cadastro'}</h2>
-          </div>
-
-          {dbError && (
-            <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid var(--danger)', borderRadius: '8px', padding: '12px', marginBottom: '20px', fontSize: '13px', color: 'var(--danger)', textAlign: 'center' }}>
-              <p style={{ margin: 0, fontWeight: 'bold' }}>Erro de conexão com o banco:</p>
-              <p style={{ margin: '4px 0 0 0', fontSize: '11px', opacity: 0.8 }}>{dbError}</p>
-              <p style={{ margin: '8px 0 0 0', fontSize: '11px' }}>Verifique as Regras de Segurança no Console do Firebase.</p>
-            </div>
-          )}
-
-          {authMode === 'login' ? (
-            <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <input name="email" type="email" placeholder="Email" required className="input-field" style={{ marginBottom: 0 }} />
-              <input name="password" type="password" placeholder="Senha" required className="input-field" style={{ marginBottom: 0 }} />
-              <button type="submit" className="btn-primary" style={{ width: '100%', justifyContent: 'center' }}>Entrar</button>
-              <p style={{ textAlign: 'center', fontSize: 14, color: 'var(--text-muted)' }}>
-                Não tem conta? <span style={{ color: 'var(--primary)', cursor: 'pointer' }} onClick={() => setAuthMode('register')}>Cadastre-se</span>
-              </p>
-            </form>
-          ) : (
-            <form onSubmit={handleRegisterUser} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <input name="name" type="text" placeholder="Seu Nome (como quer ser chamado)" required className="input-field" style={{ marginBottom: 0 }} />
-              <input name="email" type="email" placeholder="Email" required className="input-field" style={{ marginBottom: 0 }} />
-              <input name="password" type="password" placeholder="Senha" required className="input-field" style={{ marginBottom: 0 }} />
-              <button type="submit" className="btn-primary" style={{ width: '100%', justifyContent: 'center' }}>Criar Conta</button>
-              <p style={{ textAlign: 'center', fontSize: 14, color: 'var(--text-muted)' }}>
-                Já tem conta? <span style={{ color: 'var(--primary)', cursor: 'pointer' }} onClick={() => setAuthMode('login')}>Entrar</span>
-              </p>
-            </form>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  if (currentUser && !currentUser.jogadorId) {
-    return (
-      <div className="app-container" style={{ padding: 24, maxWidth: 600, margin: '0 auto', justifyContent: 'center' }}>
-        <h2 style={{ textAlign: 'center', color: 'var(--primary)', marginBottom: 24 }}>Bem-vindo, {currentUser.name}!</h2>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 24, gap: 12 }}>
-          <div style={{ position: 'relative' }}>
-            <PlayerAvatar playerName={currentUser.name} userId={currentUser.id} size={90} />
-            {isUploading && <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span className="spinner">⏳</span></div>}
-          </div>
-          <label className="btn-primary" style={{ cursor: 'pointer', padding: '6px 12px', fontSize: 13, backgroundColor: 'rgba(255,255,255,0.1)' }}>
-            <Camera size={14} style={{ marginRight: 6 }} /> Adicionar foto (opcional)
-            <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarUpload} />
-          </label>
-        </div>
-        <p style={{ textAlign: 'center', marginBottom: 24, color: 'var(--text-muted)' }}>Precisamos vincular sua conta a um jogador na nossa base para contabilizar suas estatísticas.</p>
-
-        <div className="card animated" style={{ padding: 24, marginBottom: 24 }}>
-          <h3 style={{ marginBottom: 8 }}>Nunca joguei com essa rapaziada</h3>
-          <p style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 16 }}>Primeira vez nas peladas? Crie seu jogador agora para entrar nos times.</p>
-          <button className="btn-primary" onClick={handleOnboardingCreate} style={{ width: '100%', justifyContent: 'center' }}>
-            <Plus size={18} /> Criar meu jogador
-          </button>
-        </div>
-
-        <div className="card animated" style={{ padding: 24 }}>
-          <h3 style={{ marginBottom: 8 }}>Já joguei (Selecionar da lista)</h3>
-          <p style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 16 }}>Seu nome já deve estar listado se você já participou antes. Selecione abaixo:</p>
-          <div className="player-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
-            {registeredPlayers.filter(p => !p.userId).length === 0 && (
-              <p style={{ color: 'var(--text-muted)', fontSize: 14, gridColumn: '1 / -1', textAlign: 'center', padding: '20px 0' }}>Nenhum jogador sem dono encontrado.</p>
-            )}
-            {registeredPlayers.filter(p => !p.userId).sort((a, b) => a.name.localeCompare(b.name)).map(p => (
-              <button key={p.id} className="btn-primary" onClick={() => handleOnboardingSelect(p.id)} style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)', color: 'var(--text-main)', justifyContent: 'center', paddingTop: 12, paddingBottom: 12 }}>
-                {p.name}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
+      <AuthPage 
+        authMode={authMode}
+        setAuthMode={setAuthMode}
+        handleLogin={handleLoginSubmit}
+        handleRegisterUser={handleRegisterUserSubmit}
+        dbError={dbError}
+        currentUser={currentUser}
+        handleOnboardingCreate={handleOnboardingCreate}
+        handleOnboardingSelect={handleOnboardingSelect}
+        registeredPlayers={registeredPlayers}
+        handleAvatarUpload={handleAvatarUpload}
+        isUploading={isUploading}
+        users={users}
+        registeredGoleiros={registeredGoleiros}
+      />
     );
   }
 
@@ -2282,7 +912,7 @@ function App() {
   if (showProfile) {
     const targetPlayerId = viewingPlayerId || currentUser?.jogadorId;
     const profilePlayer = registeredPlayers.find(p => p.id === targetPlayerId) || registeredGoleiros.find(p => p.id === targetPlayerId);
-    const profileStats = profilePlayer ? getPlayerStats(profilePlayer.name) : null;
+    const profileStats = profilePlayer ? getPlayerStats(profilePlayer.name, sessions, registeredPlayers, registeredGoleiros) : null;
     const isOwnProfile = targetPlayerId === currentUser?.jogadorId;
 
     let comparisonUI = null;
@@ -2293,8 +923,8 @@ function App() {
       const player1 = registeredPlayers.find(p => p.id === p1Id);
       const player2 = registeredPlayers.find(p => p.id === p2Id);
       if (player1 && player2) {
-        const stats1 = getPlayerStats(player1.name);
-        const stats2 = getPlayerStats(player2.name);
+        const stats1 = getPlayerStats(player1.name, sessions, registeredPlayers, registeredGoleiros);
+        const stats2 = getPlayerStats(player2.name, sessions, registeredPlayers, registeredGoleiros);
         const renderRow = (label, v1, v2, suffix = '') => {
           const val1 = parseFloat(v1);
           const val2 = parseFloat(v2);
@@ -2348,13 +978,13 @@ function App() {
           <div className="compare-section animated">
             <div className="compare-header-grid">
               <div className="compare-player-info">
-                <PlayerAvatar playerName={player1.name} size={48} />
+                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={player1.name} size={48} />
                 <span style={{ fontSize: 13, fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>{player1.name}</span>
                 {renderMiniBadges(stats1, player1.name)}
               </div>
               <div className="vs-badge">VS</div>
               <div className="compare-player-info">
-                <PlayerAvatar playerName={player2.name} size={48} />
+                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={player2.name} size={48} />
                 <span style={{ fontSize: 13, fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>{player2.name}</span>
                 {renderMiniBadges(stats2, player2.name)}
               </div>
@@ -2385,7 +1015,7 @@ function App() {
 
         <div className="card animated" style={{ padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24 }}>
           <div style={{ position: 'relative' }}>
-            <PlayerAvatar playerName={isOwnProfile ? currentUser?.name : profilePlayer?.name} userId={isOwnProfile ? currentUser?.id : null} size={120} />
+            <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={isOwnProfile ? currentUser?.name : profilePlayer?.name} userId={isOwnProfile ? currentUser?.id : null} size={120} />
             {isOwnProfile && isUploading && (
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <span className="spinner">⏳</span>
@@ -2418,7 +1048,7 @@ function App() {
           <>
             {(() => {
               const evolutionData = allHighlights.map(h => {
-                const monthStats = getPlayersStatsForMonth(h.monthKey);
+                const monthStats = getPlayersStatsForMonth(sessions, registeredPlayers, h.monthKey);
                 const pStat = monthStats.find(ps => ps.name === profilePlayer.name);
                 return {
                   month: h.label.split(' — ')[0] || h.label,
@@ -2429,89 +1059,188 @@ function App() {
 
               if (evolutionData.length < 2) return null;
 
+              const radarData = [
+                { subject: 'Ataque', A: Math.min(10, (profileStats.totalGoals / profileStats.peladasJogadas) * 4), value: profileStats.totalGoals, fullMark: 10 },
+                { subject: 'Garçom', A: Math.min(10, (profileStats.totalAssists / profileStats.peladasJogadas) * 5), value: profileStats.totalAssists, fullMark: 10 },
+                { subject: 'Vitória', A: (profileStats.winRate / 10), value: `${profileStats.winRate}%`, fullMark: 10 },
+                { subject: 'Média', A: profilePlayer.media_nota || 0, value: (profilePlayer.media_nota || 0).toFixed(2), fullMark: 10 },
+                { subject: 'Defesa', A: Math.min(10, (profileStats.cleanSheetsCount / (profileStats.peladasJogadas || 1)) * 5), value: profileStats.cleanSheetsCount, fullMark: 10 },
+              ];
+
               return (
-                <div className="card animated" style={{ padding: 24, marginTop: 16 }}>
-                  <h3 style={{ fontSize: 16, color: 'var(--primary)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <TrendingUp size={18} /> Evolução de Nota
-                  </h3>
-                  <div style={{ width: '100%', height: 200, marginTop: 10 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={evolutionData}>
-                        <defs>
-                          <linearGradient id="colorNota" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3}/>
-                            <stop offset="95%" stopColor="var(--primary)" stopOpacity={0}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                        <XAxis
-                          dataKey="month"
-                          stroke="var(--text-muted)"
-                          fontSize={10}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <YAxis
-                          domain={[0, 10]}
-                          stroke="var(--text-muted)"
-                          fontSize={10}
-                          tickLine={false}
-                          axisLine={false}
-                          ticks={[0, 2, 4, 6, 8, 10]}
-                        />
-                        <Tooltip
-                          contentStyle={{ backgroundColor: 'rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', fontSize: 12 }}
-                          itemStyle={{ color: 'var(--primary)' }}
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="nota"
-                          stroke="var(--primary)"
-                          strokeWidth={3}
-                          fillOpacity={1}
-                          fill="url(#colorNota)"
-                          animationDuration={1500}
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
+                <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '16px', marginTop: 16 }}>
+                  <div className="card animated" style={{ padding: '24px 16px' }}>
+                    <h3 style={{ fontSize: 16, color: 'var(--primary)', marginBottom: 16, textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                      <Target size={18} /> Pontos Fortes
+                    </h3>
+                    <div style={{ width: '100%', height: 240, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <RadarChart cx="50%" cy="50%" outerRadius="75%" data={radarData} style={{ outline: 'none' }}>
+                          <PolarGrid stroke="rgba(255,255,255,0.05)" radialLines={false} />
+                          <PolarAngleAxis 
+                            dataKey="subject" 
+                            tick={{ fill: 'var(--text-muted)', fontSize: 11, fontWeight: '600' }} 
+                          />
+                          <PolarRadiusAxis domain={[0, 10]} tick={false} axisLine={false} />
+                          <Tooltip
+                            cursor={false}
+                            content={({ active, payload }) => {
+                              if (active && payload && payload.length) {
+                                const data = payload[0].payload;
+                                return (
+                                  <div style={{ 
+                                    backgroundColor: 'rgba(20,20,20,0.95)', 
+                                    border: '1px solid var(--primary)', 
+                                    padding: '8px 12px', 
+                                    borderRadius: '10px',
+                                    boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+                                    backdropFilter: 'blur(10px)'
+                                  }}>
+                                    <p style={{ margin: 0, fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{data.subject}</p>
+                                    <p style={{ margin: 0, fontSize: 16, fontWeight: 'bold', color: 'var(--primary)' }}>{data.value}</p>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            }}
+                          />
+                          <Radar
+                            name={profilePlayer.name}
+                            dataKey="A"
+                            stroke="var(--primary)"
+                            strokeWidth={3}
+                            fill="var(--primary)"
+                            fillOpacity={0.2}
+                            dot={{ r: 4, fill: 'var(--primary)', strokeWidth: 2, stroke: '#fff' }}
+                          />
+                        </RadarChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12 }}>
-                    {(() => {
-                      const first = evolutionData[0].nota;
-                      const last = evolutionData[evolutionData.length - 1].nota;
-                      const totalDiff = last - first;
-                      return (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: totalDiff >= 0 ? '#22c55e' : '#ef4444' }}>
-                          {totalDiff >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                          <span>Saldo Total: {totalDiff >= 0 ? '+' : ''}{totalDiff.toFixed(1)} pontos na temporada</span>
-                        </div>
-                      );
-                    })()}
+
+                  <div className="card animated" style={{ padding: 24 }}>
+                    <h3 style={{ fontSize: 16, color: 'var(--primary)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <TrendingUp size={18} /> Evolução de Nota
+                    </h3>
+                    <div style={{ width: '100%', height: 180, marginTop: 10 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={evolutionData} style={{ outline: 'none' }}>
+                          <defs>
+                            <linearGradient id="colorNota" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.4}/>
+                              <stop offset="95%" stopColor="var(--primary)" stopOpacity={0}/>
+                            </linearGradient>
+                          </defs>
+                          <XAxis
+                            dataKey="month"
+                            stroke="var(--text-muted)"
+                            fontSize={10}
+                            tickLine={false}
+                            axisLine={false}
+                            dy={10}
+                          />
+                          <YAxis hide domain={[0, 10]} />
+                          <Tooltip
+                            contentStyle={{ 
+                              backgroundColor: 'rgba(20,20,20,0.9)', 
+                              border: '1px solid rgba(255,255,255,0.1)', 
+                              borderRadius: '12px', 
+                              fontSize: 12,
+                              backdropFilter: 'blur(10px)',
+                              boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
+                            }}
+                            itemStyle={{ color: 'var(--primary)', fontWeight: 'bold' }}
+                            cursor={{ stroke: 'rgba(255,255,255,0.1)', strokeWidth: 1 }}
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="nota"
+                            stroke="var(--primary)"
+                            strokeWidth={4}
+                            fillOpacity={1}
+                            fill="url(#colorNota)"
+                            animationDuration={2000}
+                            dot={false}
+                            activeDot={{ r: 6, strokeWidth: 0, fill: 'var(--primary)' }}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12 }}>
+                      {(() => {
+                        const first = evolutionData[0].nota;
+                        const last = evolutionData[evolutionData.length - 1].nota;
+                        const totalDiff = last - first;
+                        return (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: totalDiff >= 0 ? '#22c55e' : '#ef4444' }}>
+                            {totalDiff >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                            <span>Saldo Total: {totalDiff >= 0 ? '+' : ''}{totalDiff.toFixed(1)} pts na temporada</span>
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </div>
                 </div>
               );
             })()}
 
             <div className="card animated" style={{ padding: 24, marginTop: 16 }}>
-              <h3 style={{ fontSize: 16, color: 'var(--primary)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}><Trophy size={18} /> {isOwnProfile ? 'Minhas Estatísticas' : 'Estatísticas'}</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <h3 style={{ fontSize: 16, color: 'var(--primary)', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><Trophy size={18} /> Desempenho Geral</h3>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  {(profileStats.recentForm || []).reverse().map((f, i) => (
+                    <div key={i} title={`Nota: ${f.nota.toFixed(1)}`} style={{ 
+                      width: 10, height: 10, borderRadius: '50%', 
+                      backgroundColor: f.won ? '#22c55e' : '#ef4444',
+                      boxShadow: `0 0 5px ${f.won ? '#22c55e' : '#ef4444'}`
+                    }}></div>
+                  ))}
+                </div>
+              </div>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: 16 }}>
                 {[
-                  { icon: '🏟️', label: 'Peladas', value: profileStats.peladasJogadas },
-                  { icon: '🥇', label: 'Vitorias', value: profileStats.peladasGanhas },
-                  { icon: '⚽', label: 'Gols', value: profileStats.totalGoals },
-                  { icon: '🎯', label: 'Assistências', value: profileStats.totalAssists },
-                  { icon: '📊', label: 'Média Gols', value: profileStats.goalAvg },
-                  { icon: '📈', label: 'Média Assist.', value: profileStats.assistAvg },
-                  { icon: '⭐', label: 'Nota Geral', value: profilePlayer?.media_nota?.toFixed(2) || '0.00' },
+                  { label: 'Peladas', value: profileStats.peladasJogadas, icon: '🏟️' },
+                  { label: 'Gols', value: profileStats.totalGoals, icon: '⚽' },
+                  { label: 'Assist.', value: profileStats.totalAssists, icon: '🎯' },
+                  { label: 'Win Rate', value: `${profileStats.winRate}%`, icon: '📈' },
                 ].map((s, i) => (
-                  <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '14px 8px', borderRadius: '12px', backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                    <span style={{ fontSize: 20 }}>{s.icon}</span>
-                    <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-main)' }}>{s.value}</span>
-                    <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{s.label}</span>
+                  <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '10px 4px', borderRadius: '12px', backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-main)' }}>{s.value}</span>
+                    <span style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{s.label}</span>
                   </div>
                 ))}
               </div>
-              {renderPlayerBadges(profilePlayer.name, false)}
+
+              <div style={{ marginTop: 20 }}>
+                <PlayerBadges playerName={profilePlayer.name} stats={profileStats} isPodium={false} />
+              </div>
+
+              {profileStats.bestPartners && profileStats.bestPartners.length > 0 && (
+                <div style={{ 
+                  marginTop: 20, padding: '16px', borderRadius: '12px', 
+                  backgroundColor: 'rgba(59, 130, 246, 0.03)', border: '1px solid rgba(59, 130, 246, 0.08)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                    <div style={{ backgroundColor: 'var(--primary)', padding: '6px', borderRadius: '8px' }}>
+                      <Users size={16} color="#fff" />
+                    </div>
+                    <p style={{ margin: 0, fontSize: 11, fontWeight: '700', color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Melhores Duplas</p>
+                  </div>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {profileStats.bestPartners.map((partner, idx) => (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                           <span style={{ fontSize: 13, fontWeight: '600', color: 'var(--text-main)' }}>{partner.name}</span>
+                           <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{partner.matches} {partner.matches === 1 ? 'jogo' : 'jogos'}</span>
+                        </div>
+                        <span style={{ fontSize: 13, fontWeight: '700', color: 'var(--primary)' }}>{partner.rate}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="card animated" style={{ padding: 24, marginTop: 16, marginBottom: 40 }}>
@@ -2591,12 +1320,12 @@ function App() {
 
       const months = allHighlights.map(h => ({ key: h.monthKey, label: h.label }));
       const currentMonthKey = selectedMonthKey || (months.length > 0 ? months[0].key : null);
-      const monthlyPlayers = currentMonthKey ? getPlayersStatsForMonth(currentMonthKey) : [];
+      const monthlyPlayers = currentMonthKey ? getPlayersStatsForMonth(sessions, registeredPlayers, currentMonthKey) : [];
 
       // Get previous month stats for comparison
       const currentIdx = months.findIndex(m => m.key === currentMonthKey);
       const prevMonthKey = (currentIdx !== -1 && currentIdx < months.length - 1) ? months[currentIdx + 1].key : null;
-      const prevMonthlyPlayers = prevMonthKey ? getPlayersStatsForMonth(prevMonthKey) : [];
+      const prevMonthlyPlayers = prevMonthKey ? getPlayersStatsForMonth(sessions, registeredPlayers, prevMonthKey) : [];
 
       return (
         <div className="app-container">
@@ -2761,7 +1490,7 @@ function App() {
                                 style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} 
                                 title="Ver perfil"
                               >
-                                <PlayerAvatar 
+                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} 
                                   playerName={p.name} 
                                   size={36} 
                                   onClick={() => { setViewingPlayerId(p.id); setShowProfile(true); }}
@@ -2837,9 +1566,9 @@ function App() {
                               <span style={{ fontWeight: 'bold', color: '#eab308', fontSize: 16 }}>{p.media_nota?.toFixed(2) || '0.00'}</span>
                             </div>
                           </div>
-                          {renderPlayerBadgesForMonth(p.name, currentMonthKey, false)}
+                          <PlayerBadges playerName={p.name} stats={getPlayerStatsForMonth(sessions, p.name, currentMonthKey)} isPodium={false} monthKey={currentMonthKey} />
                           {expandedPlayerStats[p.id] && (() => {
-                            const stats = getPlayerStatsForMonth(p.name, currentMonthKey);
+                            const stats = getPlayerStatsForMonth(sessions, p.name, currentMonthKey, registeredPlayers);
                             return stats.matchHistory?.length > 0 && (
                               <div className="match-history animated" style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '12px', cursor: 'default' }} onClick={(e) => e.stopPropagation()}>
                                 <h4 style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '10px' }}>Histórico nas Peladas</h4>
@@ -2875,11 +1604,11 @@ function App() {
                           <div className="podium-container animated" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: '8px', paddingTop: '32px', paddingBottom: '16px', marginBottom: '8px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '30%', position: 'relative' }}>
                               <div onClick={(e) => { e.stopPropagation(); setViewingPlayerId(podiumPlayers[1].id); setShowProfile(true); }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
-                                <PlayerAvatar playerName={podiumPlayers[1].name} size={48} />
+                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={podiumPlayers[1].name} size={48} />
                                 <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)', transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-main)'}>{podiumPlayers[1].name}</div>
                               </div>
                               <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[1])}</div>
-                              {renderPlayerBadgesForMonth(podiumPlayers[1].name, currentMonthKey, true)}
+                              <PlayerBadges playerName={podiumPlayers[1].name} stats={getPlayerStatsForMonth(sessions, podiumPlayers[1].name, currentMonthKey)} isPodium={true} monthKey={currentMonthKey} />
                               {isGlobalAdmin && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
                                   <select
@@ -2904,11 +1633,11 @@ function App() {
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '35%', position: 'relative', zIndex: 10 }}>
                               <div style={{ position: 'absolute', top: '-28px', fontSize: '26px', filter: 'drop-shadow(0 2px 4px rgba(234,179,8,0.4))' }}>👑</div>
                               <div onClick={(e) => { e.stopPropagation(); setViewingPlayerId(podiumPlayers[0].id); setShowProfile(true); }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
-                                <PlayerAvatar playerName={podiumPlayers[0].name} size={64} />
+                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={podiumPlayers[0].name} size={64} />
                                 <div style={{ marginTop: '8px', fontSize: '15px', fontWeight: 'bold', textAlign: 'center', color: '#eab308', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', transition: 'filter 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.filter = 'brightness(1.2)'} onMouseOut={(e) => e.currentTarget.style.filter = 'none'}>{podiumPlayers[0].name}</div>
                               </div>
                               <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[0])}</div>
-                              {renderPlayerBadgesForMonth(podiumPlayers[0].name, currentMonthKey, true)}
+                              <PlayerBadges playerName={podiumPlayers[0].name} stats={getPlayerStatsForMonth(sessions, podiumPlayers[0].name, currentMonthKey)} isPodium={true} monthKey={currentMonthKey} />
                               {isGlobalAdmin && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
                                   <select
@@ -2932,11 +1661,11 @@ function App() {
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '30%', position: 'relative' }}>
                               <div onClick={(e) => { e.stopPropagation(); setViewingPlayerId(podiumPlayers[2].id); setShowProfile(true); }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
-                                <PlayerAvatar playerName={podiumPlayers[2].name} size={48} />
+                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={podiumPlayers[2].name} size={48} />
                                 <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)', transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-main)'}>{podiumPlayers[2].name}</div>
                               </div>
                               <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[2])}</div>
-                              {renderPlayerBadgesForMonth(podiumPlayers[2].name, currentMonthKey, true)}
+                              <PlayerBadges playerName={podiumPlayers[2].name} stats={getPlayerStatsForMonth(sessions, podiumPlayers[2].name, currentMonthKey)} isPodium={true} monthKey={currentMonthKey} />
                               {isGlobalAdmin && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
                                   <select
@@ -3062,8 +1791,8 @@ function App() {
                         if (playerSortConfig === 'media') return (b.media_nota || 0) - (a.media_nota || 0) || a.name.localeCompare(b.name);
                         if (playerSortConfig === 'ga') return ((b.total_gols || 0) + (b.total_assistencias || 0)) - ((a.total_gols || 0) + (a.total_assistencias || 0)) || (b.media_nota || 0) - (a.media_nota || 0) || a.name.localeCompare(b.name);
                         if (playerSortConfig === 'media_ga') {
-                          const statsA = getPlayerStats(a.name);
-                          const statsB = getPlayerStats(b.name);
+                          const statsA = getPlayerStats(a.name, sessions, registeredPlayers, registeredGoleiros);
+                          const statsB = getPlayerStats(b.name, sessions, registeredPlayers, registeredGoleiros);
                           const avgA = statsA.peladasJogadas > 0 ? (statsA.totalGoals + statsA.totalAssists) / statsA.peladasJogadas : 0;
                           const avgB = statsB.peladasJogadas > 0 ? (statsB.totalGoals + statsB.totalAssists) / statsB.peladasJogadas : 0;
                           return avgB - avgA || (b.media_nota || 0) - (a.media_nota || 0) || a.name.localeCompare(b.name);
@@ -3086,7 +1815,7 @@ function App() {
                       if (playerSortConfig === 'media') maxStatValue = 10;
                       if (playerSortConfig === 'ga') maxStatValue = ((topP.total_gols || 0) + (topP.total_assistencias || 0)) || 1;
                       if (playerSortConfig === 'media_ga') {
-                        const topStats = getPlayerStats(topP.name);
+                        const topStats = getPlayerStats(topP.name, sessions, registeredPlayers, registeredGoleiros);
                         maxStatValue = topStats.peladasJogadas > 0 ? (topStats.totalGoals + topStats.totalAssists) / topStats.peladasJogadas : 1;
                       }
                     }
@@ -3106,7 +1835,7 @@ function App() {
                       if (playerSortConfig === 'media') return <span style={{ color: 'var(--primary)' }}>⭐ {p.media_nota?.toFixed(2) || '0.00'}</span>;
                       if (playerSortConfig === 'ga') return <span style={{ color: 'var(--primary)' }}>🔥 {(p.total_gols || 0) + (p.total_assistencias || 0)}</span>;
                       if (playerSortConfig === 'media_ga') {
-                        const pStats = getPlayerStats(p.name);
+                        const pStats = getPlayerStats(p.name, sessions, registeredPlayers, registeredGoleiros);
                         const avg = pStats.peladasJogadas > 0 ? ((pStats.totalGoals + pStats.totalAssists) / pStats.peladasJogadas).toFixed(2) : '0.00';
                         return <span style={{ color: 'var(--primary)' }}>📊 {avg}</span>;
                       }
@@ -3114,7 +1843,7 @@ function App() {
                     };
 
                     const renderPlayerCard = (p) => {
-                      const stats = getPlayerStats(p.name);
+                      const stats = getPlayerStats(p.name, sessions, registeredPlayers, registeredGoleiros);
                       let currentStatValue = 0;
                       if (playerSortConfig === 'gols') currentStatValue = p.total_gols || 0;
                       if (playerSortConfig === 'assistencias') currentStatValue = p.total_assistencias || 0;
@@ -3122,7 +1851,7 @@ function App() {
                       if (playerSortConfig === 'media') currentStatValue = p.media_nota || 0;
                       if (playerSortConfig === 'ga') currentStatValue = (p.total_gols || 0) + (p.total_assistencias || 0);
                       if (playerSortConfig === 'media_ga') {
-                        const pStats = getPlayerStats(p.name);
+                        const pStats = getPlayerStats(p.name, sessions, registeredPlayers, registeredGoleiros);
                         currentStatValue = pStats.peladasJogadas > 0 ? (pStats.totalGoals + pStats.totalAssists) / pStats.peladasJogadas : 0;
                       }
 
@@ -3141,7 +1870,7 @@ function App() {
                                 style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} 
                                 title="Ver perfil"
                               >
-                                <PlayerAvatar 
+                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} 
                                   playerName={p.name} 
                                   size={36} 
                                   onClick={() => { setViewingPlayerId(p.id); setShowProfile(true); }}
@@ -3204,7 +1933,7 @@ function App() {
                               <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>Média Geral</span>
                             </div>
                           </div>
-                          {renderPlayerBadges(p.name, false)}
+                          <PlayerBadges playerName={p.name} stats={getPlayerStats(p.name, sessions, registeredPlayers, registeredGoleiros)} isPodium={false} />
 
                           {expandedPlayerStats[p.id] && stats.matchHistory?.length > 0 && (
                             <div className="match-history animated" style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '12px', cursor: 'default' }} onClick={(e) => e.stopPropagation()}>
@@ -3241,11 +1970,11 @@ function App() {
                             {/* 2ND PLACE */}
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '30%', position: 'relative' }}>
                               <div onClick={(e) => { e.stopPropagation(); setViewingPlayerId(podiumPlayers[1].id); setShowProfile(true); }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
-                                <PlayerAvatar playerName={podiumPlayers[1].name} size={48} />
+                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={podiumPlayers[1].name} size={48} />
                                 <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)', transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-main)'}>{podiumPlayers[1].name}</div>
                               </div>
                               <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[1])}</div>
-                              {renderPlayerBadges(podiumPlayers[1].name, true)}
+                              <PlayerBadges playerName={podiumPlayers[1].name} stats={getPlayerStats(podiumPlayers[1].name, sessions, registeredPlayers, registeredGoleiros)} isPodium={true} />
                               {isGlobalAdmin && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
                                   <select
@@ -3275,11 +2004,11 @@ function App() {
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '35%', position: 'relative', zIndex: 10 }}>
                               <div style={{ position: 'absolute', top: '-28px', fontSize: '26px', filter: 'drop-shadow(0 2px 4px rgba(234,179,8,0.4))' }}>👑</div>
                               <div onClick={(e) => { e.stopPropagation(); setViewingPlayerId(podiumPlayers[0].id); setShowProfile(true); }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
-                                <PlayerAvatar playerName={podiumPlayers[0].name} size={64} />
+                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={podiumPlayers[0].name} size={64} />
                                 <div style={{ marginTop: '8px', fontSize: '15px', fontWeight: 'bold', textAlign: 'center', color: '#eab308', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', transition: 'filter 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.filter = 'brightness(1.2)'} onMouseOut={(e) => e.currentTarget.style.filter = 'none'}>{podiumPlayers[0].name}</div>
                               </div>
                               <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[0])}</div>
-                              {renderPlayerBadges(podiumPlayers[0].name, true)}
+                              <PlayerBadges playerName={podiumPlayers[0].name} stats={getPlayerStats(podiumPlayers[0].name, sessions, registeredPlayers, registeredGoleiros)} isPodium={true} />
                               {isGlobalAdmin && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
                                   <select
@@ -3307,10 +2036,10 @@ function App() {
 
                             {/* 3RD PLACE */}
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '30%', position: 'relative' }}>
-                              <PlayerAvatar playerName={podiumPlayers[2].name} size={48} />
+                              <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={podiumPlayers[2].name} size={48} />
                               <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)' }}>{podiumPlayers[2].name}</div>
                               <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[2])}</div>
-                              {renderPlayerBadges(podiumPlayers[2].name, true)}
+                              <PlayerBadges playerName={podiumPlayers[2].name} stats={getPlayerStats(podiumPlayers[2].name, sessions, registeredPlayers, registeredGoleiros)} isPodium={true} />
                               {isGlobalAdmin && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
                                   <select
@@ -3412,7 +2141,7 @@ function App() {
                                 style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} 
                                 title="Ver perfil"
                               >
-                                <PlayerAvatar 
+                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} 
                                   playerName={p.name} 
                                   size={36} 
                                   onClick={() => { setViewingPlayerId(p.id); setShowProfile(true); }}
@@ -3489,7 +2218,7 @@ function App() {
                             )}
                             <div className="hl-name" style={{ display: 'flex', flexDirection: hasMultiple ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: hasMultiple ? 6 : 8, width: '100%', flexWrap: 'wrap' }}>
                               {val > 0 && !hasMultiple && (
-                                <PlayerAvatar 
+                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} 
                                   playerName={statObj.name} 
                                   size={24} 
                                   onClick={() => {
@@ -3575,7 +2304,7 @@ function App() {
           </div>
           <div className="app-header-actions">
             <span onClick={() => setShowProfile(true)} className="user-pill">
-              <PlayerAvatar playerName={currentUser?.name} userId={currentUser?.id} size={28} />
+              <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={currentUser?.name} userId={currentUser?.id} size={28} />
               <span style={{ fontWeight: 600 }}>{currentUser?.name}</span>
               {isGlobalAdmin && <Shield size={14} color="var(--primary)" title="Administrador Global" />}
             </span>
@@ -3599,7 +2328,7 @@ function App() {
                   return (
                     <div key={u.id} className="admin-user-card">
                       <div className="admin-user-info">
-                        <PlayerAvatar playerName={linkedPlayer?.name || ''} size={40} />
+                        <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={linkedPlayer?.name || ''} size={40} />
                         <div className="admin-user-details">
                           <span className="admin-user-name">
                             {u.name}
@@ -3746,7 +2475,7 @@ function App() {
 
                                 <div className="hl-name" style={{ display: 'flex', flexDirection: hasMultiple ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: hasMultiple ? 6 : 8, width: '100%', flexWrap: 'wrap' }}>
                                   {val > 0 && !hasMultiple && (
-                                    <PlayerAvatar 
+                                    <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} 
                                       playerName={statObj.name} 
                                       size={24} 
                                       onClick={() => {
@@ -3828,14 +2557,45 @@ function App() {
                             <div className="field-line field-penalty-area-top"></div>
                             <div className="field-line field-penalty-area-bottom"></div>
 
-                            {/* Atacantes (Front) */}
-                            {renderFormation(hl.teamOfMonth.atacantes, 'Atacante', [], true)}
-
-                            {/* Meia (Middle) */}
-                            {renderFormation(hl.teamOfMonth.meia, 'Meia', [], true)}
-
-                            {/* Zagueiros (Back) */}
-                            {renderFormation(hl.teamOfMonth.zagueiros, 'Zagueiro', [], true)}
+                            <SoccerField 
+                              users={users}
+                              players={hl.teamOfMonth.atacantes} 
+                              type="Atacante" 
+                              sourceRatings={[]} 
+                              isHighlights={true}
+                              registeredPlayers={registeredPlayers}
+                              registeredGoleiros={registeredGoleiros}
+                              onPlayerClick={(pObj) => {
+                                setViewingPlayerId(pObj.id);
+                                setShowProfile(true);
+                              }}
+                            />
+                            <SoccerField 
+                              users={users}
+                              players={hl.teamOfMonth.meia} 
+                              type="Meia" 
+                              sourceRatings={[]} 
+                              isHighlights={true}
+                              registeredPlayers={registeredPlayers}
+                              registeredGoleiros={registeredGoleiros}
+                              onPlayerClick={(pObj) => {
+                                setViewingPlayerId(pObj.id);
+                                setShowProfile(true);
+                              }}
+                            />
+                            <SoccerField 
+                              users={users}
+                              players={hl.teamOfMonth.zagueiros} 
+                              type="Zagueiro" 
+                              sourceRatings={[]} 
+                              isHighlights={true}
+                              registeredPlayers={registeredPlayers}
+                              registeredGoleiros={registeredGoleiros}
+                              onPlayerClick={(pObj) => {
+                                setViewingPlayerId(pObj.id);
+                                setShowProfile(true);
+                              }}
+                            />
                           </div>
                           {isGlobalAdmin && (
                             <p style={{ fontSize: 10, color: 'var(--text-muted)', textAlign: 'center', marginTop: 8 }}>
@@ -3938,7 +2698,7 @@ function App() {
   const allPlayers = teams.flatMap(t => (t.players || []).map(p => ({ ...p, teamName: t.name })));
 
   // Calculate session ratings for tiebreaker
-  const sessionRatings = calculateSessionPlayerRatings(activeSession);
+  const sessionRatings = calculateSessionPlayerRatings(activeSession, registeredPlayers);
   const getPlayerNota = (playerName) => {
     const r = sessionRatings.find(r => r.name.trim().toLowerCase() === playerName.trim().toLowerCase());
     return r ? r.nota : 0;
@@ -3984,7 +2744,7 @@ function App() {
             const pObj = registeredPlayers.find(rp => rp.name === players[1].name) || registeredGoleiros.find(rg => rg.name === players[1].name);
             if (pObj) { setViewingPlayerId(pObj.id); setShowProfile(true); }
           }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
-            <PlayerAvatar playerName={players[1].name} size={40} />
+            <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={players[1].name} size={40} />
             <div style={{ marginTop: '8px', fontSize: '12px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)', transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-main)'}>{players[1].name}</div>
           </div>
           <div style={{ fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>{getStatValue(players[1])}</div>
@@ -3998,7 +2758,7 @@ function App() {
             const pObj = registeredPlayers.find(rp => rp.name === players[0].name) || registeredGoleiros.find(rg => rg.name === players[0].name);
             if (pObj) { setViewingPlayerId(pObj.id); setShowProfile(true); }
           }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
-            <PlayerAvatar playerName={players[0].name} size={50} />
+            <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={players[0].name} size={50} />
             <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', color: '#eab308', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', transition: 'filter 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.filter = 'brightness(1.2)'} onMouseOut={(e) => e.currentTarget.style.filter = 'none'}>{players[0].name}</div>
           </div>
           <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '6px' }}>{getStatValue(players[0])}</div>
@@ -4011,7 +2771,7 @@ function App() {
             const pObj = registeredPlayers.find(rp => rp.name === players[2].name) || registeredGoleiros.find(rg => rg.name === players[2].name);
             if (pObj) { setViewingPlayerId(pObj.id); setShowProfile(true); }
           }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
-            <PlayerAvatar playerName={players[2].name} size={40} />
+            <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={players[2].name} size={40} />
             <div style={{ marginTop: '8px', fontSize: '12px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)', transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-main)'}>{players[2].name}</div>
           </div>
           <div style={{ fontSize: '13px', fontWeight: 'bold', marginBottom: '6px' }}>{getStatValue(players[2])}</div>
@@ -4423,7 +3183,7 @@ function App() {
                                     }}>
                                       <div className="player-header">
                                         <span style={{ color: '#ffffff', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                          <PlayerAvatar playerName={player.name} size={30} />
+                                          <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={player.name} size={30} />
                                           {player.name}
                                           {/* Botão para editar nome do Jogador */}
                                           {canEditSession(activeSession) && <button className="icon-btn" style={{ padding: 4, color: 'rgba(255,255,255,0.6)' }} onClick={(e) => { e.stopPropagation(); editPlayerName(team.id, player.id, player.name); }}><Pencil size={12} /></button>}
@@ -4477,14 +3237,42 @@ function App() {
 
                                   return (
                                     <>
-                                      {/* Atacantes (Top) */}
-                                      {renderFormation(atacantes, 'Atacante', sessionRatings)}
-
-                                      {/* Meias (Middle) */}
-                                      {renderFormation(meias, 'Meia', sessionRatings)}
-
-                                      {/* Zagueiros (Bottom) */}
-                                      {renderFormation(zagueiros, 'Zagueiro', sessionRatings)}
+                                      <SoccerField 
+                                        users={users}
+                                        players={atacantes} 
+                                        type="Atacante" 
+                                        sourceRatings={sessionRatings}
+                                        registeredPlayers={registeredPlayers}
+                                        registeredGoleiros={registeredGoleiros}
+                                        onPlayerClick={(pObj) => {
+                                          setViewingPlayerId(pObj.id);
+                                          setShowProfile(true);
+                                        }}
+                                      />
+                                      <SoccerField 
+                                        users={users}
+                                        players={meias} 
+                                        type="Meia" 
+                                        sourceRatings={sessionRatings}
+                                        registeredPlayers={registeredPlayers}
+                                        registeredGoleiros={registeredGoleiros}
+                                        onPlayerClick={(pObj) => {
+                                          setViewingPlayerId(pObj.id);
+                                          setShowProfile(true);
+                                        }}
+                                      />
+                                      <SoccerField 
+                                        users={users}
+                                        players={zagueiros} 
+                                        type="Zagueiro" 
+                                        sourceRatings={sessionRatings}
+                                        registeredPlayers={registeredPlayers}
+                                        registeredGoleiros={registeredGoleiros}
+                                        onPlayerClick={(pObj) => {
+                                          setViewingPlayerId(pObj.id);
+                                          setShowProfile(true);
+                                        }}
+                                      />
                                     </>
                                   );
                                 })()}
@@ -4675,7 +3463,7 @@ function App() {
                                 const pObj = registeredPlayers.find(rp => rp.name === p.name) || registeredGoleiros.find(rg => rg.name === p.name);
                                 if (pObj) { setViewingPlayerId(pObj.id); setShowProfile(true); }
                               }} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }} title="Ver perfil">
-                                <PlayerAvatar playerName={p.name} size={28} />
+                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={p.name} size={28} />
                                 <span style={{ transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = ''}>{p.name} <span className="team-name">({p.teamName})</span></span>
                               </span>
                             </div>
@@ -4714,7 +3502,7 @@ function App() {
                               >
                                 {actualIdx + 1}
                               </span>
-                              <PlayerAvatar playerName={p.name} size={28} />
+                              <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={p.name} size={28} />
                               <span>{p.name} <span className="team-name">({p.teamName})</span></span>
                             </div>
                             <span className="score-val" style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>{p.assists} <span style={{ fontSize: '14px' }}>🎯</span></span>
@@ -4760,7 +3548,7 @@ function App() {
                           else color = '#ef4444'; // red
 
                           return (
-                            <div key={p.id} className="ranking-item" style={{ padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                            <div key={p.id} className="ranking-item" style={{ padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                               <div
                                 onClick={() => {
                                   const pObj = registeredPlayers.find(rp => rp.name === p.name) || registeredGoleiros.find(rg => rg.name === p.name);
@@ -4769,7 +3557,17 @@ function App() {
                                 style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
                                 title="Ver perfil"
                               >
-                                <PlayerAvatar playerName={p.name} size={32} />
+                                <span style={{ 
+                                  fontSize: '11px', 
+                                  fontWeight: '800', 
+                                  color: 'var(--text-muted)', 
+                                  width: '20px', 
+                                  textAlign: 'center',
+                                  opacity: 0.6
+                                }}>
+                                  {actualIdx + 1}
+                                </span>
+                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={p.name} size={32} />
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                                   <span style={{ fontSize: '14px', fontWeight: '600', transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = ''}>{p.name} {actualIdx === 0 && <span title="MVP da Pelada" style={{ fontSize: 12 }}>👑</span>}</span>
                                   {(p.goals > 0 || p.assists > 0) && (
