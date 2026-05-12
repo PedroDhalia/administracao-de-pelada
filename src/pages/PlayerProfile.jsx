@@ -67,6 +67,7 @@ const PlayerProfile = ({
               { icon: '📊', label: 'Média Gols', value: profileStats.goalAvg },
               { icon: '📈', label: 'Média Assist.', value: profileStats.assistAvg },
               { icon: '⭐', label: 'Nota Geral', value: player?.media_nota?.toFixed(2) || '0.00' },
+              { icon: '🛡️', label: 'Clean Sheets', value: profileStats.cleanSheetsCount || 0 },
             ].map((s, i) => (
               <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '14px 8px', borderRadius: '12px', backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
                 <span style={{ fontSize: 20 }}>{s.icon}</span>

@@ -290,9 +290,7 @@ export const getPlayersStatsForMonth = (sessions, registeredPlayers, monthKey) =
       if (sessionMaxAssists > 0 && (r.assists || 0) === sessionMaxAssists) playerStatsMap[normName].garcomCount += 1;
       if (!isInitialState && r.nota === maxNota && maxNota > 0) playerStatsMap[normName].mvpCount += 1;
       
-      if (playerStatsMap[normName].posicao === 'Zagueiro') {
-        playerStatsMap[normName].cleanSheetsCount += (cleanSheetsByTeam[r.teamId] || 0);
-      }
+      playerStatsMap[normName].cleanSheetsCount += (cleanSheetsByTeam[r.teamId] || 0);
     });
   });
 

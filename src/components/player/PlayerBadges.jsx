@@ -1,5 +1,5 @@
 import React from 'react';
-import { Trophy } from 'lucide-react';
+import { Trophy, Shield } from 'lucide-react';
 
 const PlayerBadges = ({ playerName, stats, isPodium = false, monthKey = null }) => {
   if (!playerName || !stats) return null;
@@ -29,8 +29,8 @@ const PlayerBadges = ({ playerName, stats, isPodium = false, monthKey = null }) 
           </div>
         )}
         {stats.puskasWins > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(234, 179, 8, 0.2)', padding: '2px 4px', borderRadius: '4px', border: '1px solid rgba(234, 179, 8, 0.3)', fontSize: 10 }} title="Puskas">
-            <span>👟</span><strong style={{ color: '#eab308' }}>{stats.puskasWins}x</strong>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(168, 85, 247, 0.2)', padding: '2px 4px', borderRadius: '4px', border: '1px solid rgba(168, 85, 247, 0.3)', fontSize: 10 }} title="Puskas">
+            <span>👟</span><strong style={{ color: '#a855f7' }}>{stats.puskasWins}x</strong>
           </div>
         )}
         {playerName.trim().toLowerCase() === 'digaum' && (
@@ -48,6 +48,13 @@ const PlayerBadges = ({ playerName, stats, isPodium = false, monthKey = null }) 
         <Trophy size={16} color="#eab308" />
         <span>Vitorias: <strong style={{ color: '#eab308' }}>{stats.peladasGanhas || 0}</strong> | Win Rate: <strong style={{ color: '#eab308' }}>{stats.winRate || 0}%</strong></span>
       </div>
+      
+      {stats.cleanSheetsCount > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '4px' }}>
+          <Shield size={16} color="#3b82f6" />
+          <span>Clean Sheets: <strong style={{ color: '#3b82f6' }}>{stats.cleanSheetsCount}</strong></span>
+        </div>
+      )}
 
       {hasBadges && (
         <div style={{ width: '1px', height: '14px', backgroundColor: 'rgba(255,255,255,0.1)', margin: '0 4px' }}></div>
@@ -78,10 +85,10 @@ const PlayerBadges = ({ playerName, stats, isPodium = false, monthKey = null }) 
       )}
 
       {stats.puskasWins > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(234, 179, 8, 0.2)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(234, 179, 8, 0.3)' }} title="Prêmio Puskas (Melhor Gol)">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(168, 85, 247, 0.2)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(168, 85, 247, 0.3)' }} title="Prêmio Puskas (Melhor Gol)">
           <span style={{ fontSize: 14 }}>👟</span>
-          <span style={{ fontSize: 12, color: '#eab308' }}>Puskas</span>
-          <span style={{ fontWeight: 'bold', color: '#eab308', fontSize: 12 }}>{stats.puskasWins}x</span>
+          <span style={{ fontSize: 12, color: '#a855f7' }}>Puskas</span>
+          <span style={{ fontWeight: 'bold', color: '#a855f7', fontSize: 12 }}>{stats.puskasWins}x</span>
         </div>
       )}
 
