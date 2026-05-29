@@ -1,6 +1,6 @@
 <div align="center">
 
-# ⚽ Pelada Selva
+# ⚽ Pelada
 
 **Transforme o futebol de fim de semana em uma experiência profissional.**
 
