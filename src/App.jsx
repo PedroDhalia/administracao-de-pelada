@@ -17,12 +17,12 @@ import { db } from './api/firebase';
 
 // Constants & Utils
 import { CURRENT_FORMULA_VERSION, GENERATE_ID as generateId } from './constants';
-import { 
-  calculateSessionPlayerRatings, 
-  getMonthlyHighlights, 
-  getPlayerStatsForMonth, 
-  getPlayerStats, 
-  getPlayersStatsForMonth 
+import {
+  calculateSessionPlayerRatings,
+  getMonthlyHighlights,
+  getPlayerStatsForMonth,
+  getPlayerStats,
+  getPlayersStatsForMonth
 } from './utils/calculations';
 import { getTextColor, getNotaColor, compressImage } from './utils/helpers';
 
@@ -38,11 +38,11 @@ import PlayerProfile from './pages/PlayerProfile';
 import PlayerBadges from './components/player/PlayerBadges';
 
 function App() {
-  const { 
-    sessions, registeredPlayers, registeredGoleiros, users, 
-    isLoaded, dbError, updateSessionsAndStats 
+  const {
+    sessions, registeredPlayers, registeredGoleiros, users,
+    isLoaded, dbError, updateSessionsAndStats
   } = useDatabase();
-  
+
   const { loggedInUserId, login, logout } = useAuth();
 
   const [authMode, setAuthMode] = useState('login');
@@ -76,6 +76,12 @@ function App() {
   const [teamViewModes, setTeamViewModes] = useState({}); // 'list' or 'field'
   const [comparePlayer1Id, setComparePlayer1Id] = useState(null);
   const [comparePlayer2Id, setComparePlayer2Id] = useState(null);
+  const [compareMonthKey, setCompareMonthKey] = useState('');
+
+  useEffect(() => {
+    setComparePlayer2Id(null);
+    setCompareMonthKey('');
+  }, [viewingPlayerId]);
 
   const togglePlayerStats = (id) => {
     setExpandedPlayerStats(prev => ({ ...prev, [id]: !prev[id] }));
@@ -365,7 +371,8 @@ function App() {
       date: new Date().toLocaleDateString('pt-BR'),
       teams: [],
       criador: currentUser.id,
-      admins: [currentUser.id]
+      admins: [currentUser.id],
+      isAutomatic: true
     };
     const newSessionsList = [newSession, ...(sessions || [])];
     updateSessionsAndStats(newSessionsList);
@@ -614,35 +621,19 @@ function App() {
     updateSessionsAndStats(newSessionsList);
   };
 
-  const updateTeamStat = (teamId, stat, delta) => {
-    const newSessionsList = sessions.map(s => {
-      if (s.id === activeSessionId) {
-        return {
-          ...s,
-          teams: s.teams.map(t => {
-            if (t.id === teamId) {
-              return { ...t, [stat]: Math.max(0, t[stat] + delta) };
-            }
-            return t;
-          })
-        };
-      }
-      return s;
-    });
-    updateSessionsAndStats(newSessionsList);
-  };
+
 
   const handleAddMatch = (e) => {
     e.preventDefault();
     const form = e.target;
     const team1Id = form.elements['team1Id'].value;
     const team2Id = form.elements['team2Id'].value;
-    
+
     if (!team1Id || !team2Id || team1Id === team2Id) {
       alert("Selecione dois times diferentes.");
       return;
     }
-    
+
     const newSessionsList = sessions.map(s => {
       if (s.id === activeSessionId) {
         return {
@@ -870,7 +861,7 @@ function App() {
 
   if (!loggedInUserId || (currentUser && !currentUser.jogadorId)) {
     return (
-      <AuthPage 
+      <AuthPage
         authMode={authMode}
         setAuthMode={setAuthMode}
         handleLogin={handleLoginSubmit}
@@ -923,8 +914,26 @@ function App() {
       const player1 = registeredPlayers.find(p => p.id === p1Id);
       const player2 = registeredPlayers.find(p => p.id === p2Id);
       if (player1 && player2) {
-        const stats1 = getPlayerStats(player1.name, sessions, registeredPlayers, registeredGoleiros);
-        const stats2 = getPlayerStats(player2.name, sessions, registeredPlayers, registeredGoleiros);
+        const stats1 = compareMonthKey 
+          ? getPlayerStatsForMonth(sessions, player1.name, compareMonthKey, registeredPlayers)
+          : getPlayerStats(player1.name, sessions, registeredPlayers, registeredGoleiros);
+        const stats2 = compareMonthKey 
+          ? getPlayerStatsForMonth(sessions, player2.name, compareMonthKey, registeredPlayers)
+          : getPlayerStats(player2.name, sessions, registeredPlayers, registeredGoleiros);
+        
+        let rating1 = 0;
+        let rating2 = 0;
+        if (compareMonthKey) {
+          const monthStats = getPlayersStatsForMonth(sessions, registeredPlayers, compareMonthKey);
+          const p1Month = monthStats.find(ps => ps.name === player1.name);
+          const p2Month = monthStats.find(ps => ps.name === player2.name);
+          rating1 = p1Month ? p1Month.media_nota : 0;
+          rating2 = p2Month ? p2Month.media_nota : 0;
+        } else {
+          rating1 = player1.media_nota || 0;
+          rating2 = player2.media_nota || 0;
+        }
+
         const renderRow = (label, v1, v2, suffix = '') => {
           const val1 = parseFloat(v1);
           const val2 = parseFloat(v2);
@@ -996,7 +1005,7 @@ function App() {
               {renderRow('Assistências', stats1.totalAssists, stats2.totalAssists)}
               {renderRow('G+A Total', stats1.totalGoals + stats1.totalAssists, stats2.totalGoals + stats2.totalAssists)}
               {renderRow('Média Gols', stats1.goalAvg, stats2.goalAvg)}
-              {renderRow('Nota', (player1.media_nota || 0).toFixed(2), (player2.media_nota || 0).toFixed(2))}
+              {renderRow('Nota', rating1.toFixed(2), rating2.toFixed(2))}
               {renderRow('Win Rate', stats1.winRate, stats2.winRate, '%')}
             </div>
           </div>
@@ -1077,9 +1086,9 @@ function App() {
                       <ResponsiveContainer width="100%" height="100%">
                         <RadarChart cx="50%" cy="50%" outerRadius="75%" data={radarData} style={{ outline: 'none' }}>
                           <PolarGrid stroke="rgba(255,255,255,0.05)" radialLines={false} />
-                          <PolarAngleAxis 
-                            dataKey="subject" 
-                            tick={{ fill: 'var(--text-muted)', fontSize: 11, fontWeight: '600' }} 
+                          <PolarAngleAxis
+                            dataKey="subject"
+                            tick={{ fill: 'var(--text-muted)', fontSize: 11, fontWeight: '600' }}
                           />
                           <PolarRadiusAxis domain={[0, 10]} tick={false} axisLine={false} />
                           <Tooltip
@@ -1088,10 +1097,10 @@ function App() {
                               if (active && payload && payload.length) {
                                 const data = payload[0].payload;
                                 return (
-                                  <div style={{ 
-                                    backgroundColor: 'rgba(20,20,20,0.95)', 
-                                    border: '1px solid var(--primary)', 
-                                    padding: '8px 12px', 
+                                  <div style={{
+                                    backgroundColor: 'rgba(20,20,20,0.95)',
+                                    border: '1px solid var(--primary)',
+                                    padding: '8px 12px',
                                     borderRadius: '10px',
                                     boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
                                     backdropFilter: 'blur(10px)'
@@ -1127,8 +1136,8 @@ function App() {
                         <AreaChart data={evolutionData} style={{ outline: 'none' }}>
                           <defs>
                             <linearGradient id="colorNota" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.4}/>
-                              <stop offset="95%" stopColor="var(--primary)" stopOpacity={0}/>
+                              <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.4} />
+                              <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
                             </linearGradient>
                           </defs>
                           <XAxis
@@ -1141,10 +1150,10 @@ function App() {
                           />
                           <YAxis hide domain={[0, 10]} />
                           <Tooltip
-                            contentStyle={{ 
-                              backgroundColor: 'rgba(20,20,20,0.9)', 
-                              border: '1px solid rgba(255,255,255,0.1)', 
-                              borderRadius: '12px', 
+                            contentStyle={{
+                              backgroundColor: 'rgba(20,20,20,0.9)',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '12px',
                               fontSize: 12,
                               backdropFilter: 'blur(10px)',
                               boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
@@ -1189,15 +1198,15 @@ function App() {
                 <h3 style={{ fontSize: 16, color: 'var(--primary)', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><Trophy size={18} /> Desempenho Geral</h3>
                 <div style={{ display: 'flex', gap: '4px' }}>
                   {(profileStats.recentForm || []).reverse().map((f, i) => (
-                    <div key={i} title={`Nota: ${f.nota.toFixed(1)}`} style={{ 
-                      width: 10, height: 10, borderRadius: '50%', 
+                    <div key={i} title={`Nota: ${f.nota.toFixed(1)}`} style={{
+                      width: 10, height: 10, borderRadius: '50%',
                       backgroundColor: f.won ? '#22c55e' : '#ef4444',
                       boxShadow: `0 0 5px ${f.won ? '#22c55e' : '#ef4444'}`
                     }}></div>
                   ))}
                 </div>
               </div>
-              
+
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: 16 }}>
                 {[
                   { label: 'Peladas', value: profileStats.peladasJogadas, icon: '🏟️' },
@@ -1217,8 +1226,8 @@ function App() {
               </div>
 
               {profileStats.bestPartners && profileStats.bestPartners.length > 0 && (
-                <div style={{ 
-                  marginTop: 20, padding: '16px', borderRadius: '12px', 
+                <div style={{
+                  marginTop: 20, padding: '16px', borderRadius: '12px',
                   backgroundColor: 'rgba(59, 130, 246, 0.03)', border: '1px solid rgba(59, 130, 246, 0.08)'
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
@@ -1227,13 +1236,13 @@ function App() {
                     </div>
                     <p style={{ margin: 0, fontSize: 11, fontWeight: '700', color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Melhores Duplas</p>
                   </div>
-                  
+
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                     {profileStats.bestPartners.map((partner, idx) => (
                       <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                           <span style={{ fontSize: 13, fontWeight: '600', color: 'var(--text-main)' }}>{partner.name}</span>
-                           <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{partner.matches} {partner.matches === 1 ? 'jogo' : 'jogos'}</span>
+                          <span style={{ fontSize: 13, fontWeight: '600', color: 'var(--text-main)' }}>{partner.name}</span>
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{partner.matches} {partner.matches === 1 ? 'jogo' : 'jogos'}</span>
                         </div>
                         <span style={{ fontSize: 13, fontWeight: '700', color: 'var(--primary)' }}>{partner.rate}%</span>
                       </div>
@@ -1262,6 +1271,14 @@ function App() {
                     ))}
                   </select>
                   {comparePlayer2Id && <button onClick={() => setComparePlayer2Id(null)} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: 'var(--text-muted)' }}><LogOut size={16} /></button>}
+                </div>
+                <div style={{ position: 'relative' }}>
+                  <select className="input-field" value={compareMonthKey} onChange={(e) => setCompareMonthKey(e.target.value)} style={{ width: '100%' }}>
+                    <option value="">Geral (Todo o período)</option>
+                    {allHighlights.map(h => (
+                      <option key={h.monthKey} value={h.monthKey}>{h.label}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
               {comparisonUI}
@@ -1485,14 +1502,14 @@ function App() {
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', zIndex: 1 }}>
                             <span className="card-title" style={{ fontSize: 18, fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                               <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-muted)' }}>{p.displayRank}º</span>
-                              <span 
-                                onClick={(e) => { e.stopPropagation(); setViewingPlayerId(p.id); setShowProfile(true); }} 
-                                style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} 
+                              <span
+                                onClick={(e) => { e.stopPropagation(); setViewingPlayerId(p.id); setShowProfile(true); }}
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
                                 title="Ver perfil"
                               >
-                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} 
-                                  playerName={p.name} 
-                                  size={36} 
+                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar}
+                                  playerName={p.name}
+                                  size={36}
                                   onClick={() => { setViewingPlayerId(p.id); setShowProfile(true); }}
                                 />
                                 <span style={{ transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = ''}>{p.name}</span>
@@ -1712,7 +1729,7 @@ function App() {
               </>
             )}
           </main>
-  
+
         </div>
       );
     }
@@ -1865,14 +1882,14 @@ function App() {
                               {playerSortConfig !== 'alfabetica' && (
                                 <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-muted)' }}>{p.displayRank}º</span>
                               )}
-                              <span 
-                                onClick={(e) => { e.stopPropagation(); setViewingPlayerId(p.id); setShowProfile(true); }} 
-                                style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} 
+                              <span
+                                onClick={(e) => { e.stopPropagation(); setViewingPlayerId(p.id); setShowProfile(true); }}
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
                                 title="Ver perfil"
                               >
-                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} 
-                                  playerName={p.name} 
-                                  size={36} 
+                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar}
+                                  playerName={p.name}
+                                  size={36}
                                   onClick={() => { setViewingPlayerId(p.id); setShowProfile(true); }}
                                 />
                                 <span style={{ transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = ''}>{p.name}</span>
@@ -2091,7 +2108,7 @@ function App() {
               </>
             )}
           </main>
-  
+
         </div>
       );
     }
@@ -2136,14 +2153,14 @@ function App() {
                               {goleiroSortConfig !== 'alfabetica' && (
                                 <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-muted)' }}>{index + 1}º</span>
                               )}
-                              <span 
-                                onClick={(e) => { e.stopPropagation(); setViewingPlayerId(p.id); setShowProfile(true); }} 
-                                style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} 
+                              <span
+                                onClick={(e) => { e.stopPropagation(); setViewingPlayerId(p.id); setShowProfile(true); }}
+                                style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
                                 title="Ver perfil"
                               >
-                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} 
-                                  playerName={p.name} 
-                                  size={36} 
+                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar}
+                                  playerName={p.name}
+                                  size={36}
                                   onClick={() => { setViewingPlayerId(p.id); setShowProfile(true); }}
                                 />
                                 <span style={{ transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = ''}>{p.name}</span>
@@ -2174,7 +2191,7 @@ function App() {
               </>
             )}
           </main>
-  
+
         </div>
       );
     }
@@ -2218,12 +2235,12 @@ function App() {
                             )}
                             <div className="hl-name" style={{ display: 'flex', flexDirection: hasMultiple ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: hasMultiple ? 6 : 8, width: '100%', flexWrap: 'wrap' }}>
                               {val > 0 && !hasMultiple && (
-                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} 
-                                  playerName={statObj.name} 
-                                  size={24} 
+                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar}
+                                  playerName={statObj.name}
+                                  size={24}
                                   onClick={() => {
-                                    const p = registeredPlayers.find(rp => (rp.name || '').trim().toLowerCase() === (statObj.name || '').trim().toLowerCase()) || 
-                                              registeredGoleiros.find(rg => (rg.name || '').trim().toLowerCase() === (statObj.name || '').trim().toLowerCase());
+                                    const p = registeredPlayers.find(rp => (rp.name || '').trim().toLowerCase() === (statObj.name || '').trim().toLowerCase()) ||
+                                      registeredGoleiros.find(rg => (rg.name || '').trim().toLowerCase() === (statObj.name || '').trim().toLowerCase());
                                     if (p) {
                                       setViewingPlayerId(p.id);
                                       setShowProfile(true);
@@ -2289,7 +2306,7 @@ function App() {
               ))}
             </div>
           </main>
-  
+
         </div>
       );
     }
@@ -2475,12 +2492,12 @@ function App() {
 
                                 <div className="hl-name" style={{ display: 'flex', flexDirection: hasMultiple ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: hasMultiple ? 6 : 8, width: '100%', flexWrap: 'wrap' }}>
                                   {val > 0 && !hasMultiple && (
-                                    <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} 
-                                      playerName={statObj.name} 
-                                      size={24} 
+                                    <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar}
+                                      playerName={statObj.name}
+                                      size={24}
                                       onClick={() => {
-                                        const p = registeredPlayers.find(rp => (rp.name || '').trim().toLowerCase() === (statObj.name || '').trim().toLowerCase()) || 
-                                                  registeredGoleiros.find(rg => (rg.name || '').trim().toLowerCase() === (statObj.name || '').trim().toLowerCase());
+                                        const p = registeredPlayers.find(rp => (rp.name || '').trim().toLowerCase() === (statObj.name || '').trim().toLowerCase()) ||
+                                          registeredGoleiros.find(rg => (rg.name || '').trim().toLowerCase() === (statObj.name || '').trim().toLowerCase());
                                         if (p) {
                                           setViewingPlayerId(p.id);
                                           setShowProfile(true);
@@ -2557,11 +2574,11 @@ function App() {
                             <div className="field-line field-penalty-area-top"></div>
                             <div className="field-line field-penalty-area-bottom"></div>
 
-                            <SoccerField 
+                            <SoccerField
                               users={users}
-                              players={hl.teamOfMonth.atacantes} 
-                              type="Atacante" 
-                              sourceRatings={[]} 
+                              players={hl.teamOfMonth.atacantes}
+                              type="Atacante"
+                              sourceRatings={[]}
                               isHighlights={true}
                               registeredPlayers={registeredPlayers}
                               registeredGoleiros={registeredGoleiros}
@@ -2570,11 +2587,11 @@ function App() {
                                 setShowProfile(true);
                               }}
                             />
-                            <SoccerField 
+                            <SoccerField
                               users={users}
-                              players={hl.teamOfMonth.meia} 
-                              type="Meia" 
-                              sourceRatings={[]} 
+                              players={hl.teamOfMonth.meia}
+                              type="Meia"
+                              sourceRatings={[]}
                               isHighlights={true}
                               registeredPlayers={registeredPlayers}
                               registeredGoleiros={registeredGoleiros}
@@ -2583,11 +2600,11 @@ function App() {
                                 setShowProfile(true);
                               }}
                             />
-                            <SoccerField 
+                            <SoccerField
                               users={users}
-                              players={hl.teamOfMonth.zagueiros} 
-                              type="Zagueiro" 
-                              sourceRatings={[]} 
+                              players={hl.teamOfMonth.zagueiros}
+                              type="Zagueiro"
+                              sourceRatings={[]}
                               isHighlights={true}
                               registeredPlayers={registeredPlayers}
                               registeredGoleiros={registeredGoleiros}
@@ -2689,7 +2706,25 @@ function App() {
   }
 
   // Calculate Rankings for active session
-  const teams = activeSession.teams || [];
+  const teams = (activeSession?.teams || []).map(t => {
+    if (activeSession?.matches) {
+      let wins = 0, draws = 0, losses = 0;
+      (activeSession.matches || []).forEach(m => {
+        if (m.team1Id === t.id) {
+          if (m.score1 > m.score2) wins++;
+          else if (m.score1 === m.score2) draws++;
+          else losses++;
+        } else if (m.team2Id === t.id) {
+          if (m.score2 > m.score1) wins++;
+          else if (m.score2 === m.score1) draws++;
+          else losses++;
+        }
+      });
+      return { ...t, wins, draws, losses };
+    }
+    return t;
+  });
+
   const teamStandings = [...teams].map(t => ({
     ...t,
     points: (t.wins * 3) + (t.draws * 1)
@@ -2871,18 +2906,18 @@ function App() {
       {showMatchesModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: 24, backdropFilter: 'blur(4px)' }}>
           <div className="card animated" style={{ width: '100%', maxWidth: 500, padding: 24, maxHeight: '90vh', display: 'flex', flexDirection: 'column', position: 'relative' }}>
-            <button 
-              className="icon-btn" 
-              style={{ position: 'absolute', top: 16, right: 16, color: 'var(--text-muted)' }} 
+            <button
+              className="icon-btn"
+              style={{ position: 'absolute', top: 16, right: 16, color: 'var(--text-muted)' }}
               onClick={() => setShowMatchesModal(false)}
             >
               <X size={24} />
             </button>
-            <h2 style={{ marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8, paddingRight: 32 }}><span style={{fontSize: '24px'}}>⚔️</span> Partidas e Placares</h2>
+            <h2 style={{ marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8, paddingRight: 32 }}><span style={{ fontSize: '24px' }}>⚔️</span> Partidas e Placares</h2>
             <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 20 }}>Acompanhe os resultados dos confrontos diretos.</p>
-            
+
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16, paddingRight: 4 }}>
-              
+
               {canEditSession(activeSession) && (
                 <form onSubmit={handleAddMatch} style={{ backgroundColor: 'rgba(255,255,255,0.03)', padding: 16, borderRadius: 12, border: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', gap: 12 }}>
                   <span style={{ fontSize: 14, fontWeight: 'bold' }}>Adicionar Partida</span>
@@ -2911,7 +2946,7 @@ function App() {
                     const t1 = teams.find(t => t.id === match.team1Id);
                     const t2 = teams.find(t => t.id === match.team2Id);
                     if (!t1 || !t2) return null;
-                    
+
                     return (
                       <div key={match.id} style={{ display: 'flex', flexDirection: 'column', backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden' }}>
                         {canEditSession(activeSession) && (
@@ -2965,6 +3000,25 @@ function App() {
 
           {/* LEFT COLUMN: TEAMS */}
           <div className="teams-column">
+            {/* PARTIDAS / PLACARES */}
+            <div className="matches-section" style={{ marginBottom: '16px' }}>
+              <button
+                className="btn-primary"
+                style={{ width: '100%', padding: '16px', backgroundColor: 'rgba(34, 197, 94, 0.1)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.3)', display: 'flex', flexDirection: 'row', gap: '16px', alignItems: 'center', justifyContent: 'center', borderRadius: '12px', cursor: 'pointer' }}
+                onClick={() => setShowMatchesModal(true)}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(34, 197, 94, 0.2)', padding: '10px', borderRadius: '50%' }}>
+                  <span style={{ fontSize: '24px', lineHeight: 1 }}>⚔️</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '16px', fontWeight: 'bold' }}>Partidas e Placares</span>
+                  <span style={{ fontSize: '13px', color: 'rgba(34, 197, 94, 0.8)', fontWeight: 'normal' }}>
+                    {(activeSession?.matches?.length || 0)} partidas registradas
+                  </span>
+                </div>
+              </button>
+            </div>
+
             {teams.length < 4 ? (
               canEditSession(activeSession) ? <form className="input-group" onSubmit={handleAddTeam} style={{ marginBottom: 4 }}>
                 <input
@@ -2977,17 +3031,7 @@ function App() {
                   + Time
                 </button>
               </form> : null
-            ) : (
-              <div style={{
-                marginBottom: 4, textAlign: 'center',
-                color: 'var(--text-muted)',
-                fontSize: 13, fontWeight: '700', padding: '12px',
-                backgroundColor: 'rgba(255,255,255,0.05)',
-                borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.1)'
-              }}>
-                Limite de times atingido (4/4)
-              </div>
-            )}
+            ) : null}
 
             {teams.length === 0 ? (
               <div className="empty-state">
@@ -3054,35 +3098,17 @@ function App() {
                           style={{ padding: '0 16px 12px 16px', cursor: 'default' }}>
                           <div className="stat-box">
                             <span className="stat-label" style={{ color: headerTextColor }}>V</span>
-                            {canEditSession(activeSession) ? (
-                              <div className="stat-controls">
-                                <button className="ctrl-btn" onClick={() => updateTeamStat(team.id, 'wins', -1)}><Minus size={12} /></button>
-                                <span className="stat-value">{team.wins}</span>
-                                <button className="ctrl-btn" onClick={() => updateTeamStat(team.id, 'wins', 1)}><Plus size={12} /></button>
-                              </div>
-                            ) : <span className="stat-value" style={{ margin: 'auto' }}>{team.wins}</span>}
+                            <span className="stat-value" style={{ margin: 'auto' }}>{team.wins}</span>
                           </div>
 
                           <div className="stat-box">
                             <span className="stat-label" style={{ color: headerTextColor }}>E</span>
-                            {canEditSession(activeSession) ? (
-                              <div className="stat-controls">
-                                <button className="ctrl-btn" onClick={() => updateTeamStat(team.id, 'draws', -1)}><Minus size={12} /></button>
-                                <span className="stat-value">{team.draws}</span>
-                                <button className="ctrl-btn" onClick={() => updateTeamStat(team.id, 'draws', 1)}><Plus size={12} /></button>
-                              </div>
-                            ) : <span className="stat-value" style={{ margin: 'auto' }}>{team.draws}</span>}
+                            <span className="stat-value" style={{ margin: 'auto' }}>{team.draws}</span>
                           </div>
 
                           <div className="stat-box">
                             <span className="stat-label" style={{ color: headerTextColor }}>D</span>
-                            {canEditSession(activeSession) ? (
-                              <div className="stat-controls">
-                                <button className="ctrl-btn" onClick={() => updateTeamStat(team.id, 'losses', -1)}><Minus size={12} /></button>
-                                <span className="stat-value">{team.losses}</span>
-                                <button className="ctrl-btn" onClick={() => updateTeamStat(team.id, 'losses', 1)}><Plus size={12} /></button>
-                              </div>
-                            ) : <span className="stat-value" style={{ margin: 'auto' }}>{team.losses}</span>}
+                            <span className="stat-value" style={{ margin: 'auto' }}>{team.losses}</span>
                           </div>
                         </div>
 
@@ -3237,10 +3263,10 @@ function App() {
 
                                   return (
                                     <>
-                                      <SoccerField 
+                                      <SoccerField
                                         users={users}
-                                        players={atacantes} 
-                                        type="Atacante" 
+                                        players={atacantes}
+                                        type="Atacante"
                                         sourceRatings={sessionRatings}
                                         registeredPlayers={registeredPlayers}
                                         registeredGoleiros={registeredGoleiros}
@@ -3249,10 +3275,10 @@ function App() {
                                           setShowProfile(true);
                                         }}
                                       />
-                                      <SoccerField 
+                                      <SoccerField
                                         users={users}
-                                        players={meias} 
-                                        type="Meia" 
+                                        players={meias}
+                                        type="Meia"
                                         sourceRatings={sessionRatings}
                                         registeredPlayers={registeredPlayers}
                                         registeredGoleiros={registeredGoleiros}
@@ -3261,10 +3287,10 @@ function App() {
                                           setShowProfile(true);
                                         }}
                                       />
-                                      <SoccerField 
+                                      <SoccerField
                                         users={users}
-                                        players={zagueiros} 
-                                        type="Zagueiro" 
+                                        players={zagueiros}
+                                        type="Zagueiro"
                                         sourceRatings={sessionRatings}
                                         registeredPlayers={registeredPlayers}
                                         registeredGoleiros={registeredGoleiros}
@@ -3291,24 +3317,7 @@ function App() {
               </div>
             )}
 
-            {/* PARTIDAS / PLACARES */}
-            <div className="matches-section" style={{ marginTop: '24px' }}>
-              <button
-                className="btn-primary"
-                style={{ width: '100%', padding: '16px', backgroundColor: 'rgba(34, 197, 94, 0.1)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.3)', display: 'flex', flexDirection: 'row', gap: '16px', alignItems: 'center', justifyContent: 'center', borderRadius: '12px', cursor: 'pointer' }}
-                onClick={() => setShowMatchesModal(true)}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(34, 197, 94, 0.2)', padding: '10px', borderRadius: '50%' }}>
-                  <span style={{ fontSize: '24px', lineHeight: 1 }}>⚔️</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-                  <span style={{ fontSize: '16px', fontWeight: 'bold' }}>Partidas e Placares</span>
-                  <span style={{ fontSize: '13px', color: 'rgba(34, 197, 94, 0.8)', fontWeight: 'normal' }}>
-                    {(activeSession?.matches?.length || 0)} partidas registradas
-                  </span>
-                </div>
-              </button>
-            </div>
+
 
             {/* GOLEIROS DA PELADA */}
             <div className="goleiros-section" style={{ marginTop: '24px', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: '12px', padding: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
@@ -3534,7 +3543,7 @@ function App() {
                 </div>
                 <div className="ranking-list" style={{ padding: '0' }}>
                   {(() => {
-                    const ratedPlayers = calculateSessionPlayerRatings(activeSession);
+                    const ratedPlayers = calculateSessionPlayerRatings(activeSession, registeredPlayers);
                     if (ratedPlayers.length === 0) return <p style={{ color: 'var(--text-muted)', fontSize: 13, padding: 16 }}>Nenhum jogador atuou.</p>;
                     return (
                       <>
@@ -3557,11 +3566,11 @@ function App() {
                                 style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
                                 title="Ver perfil"
                               >
-                                <span style={{ 
-                                  fontSize: '11px', 
-                                  fontWeight: '800', 
-                                  color: 'var(--text-muted)', 
-                                  width: '20px', 
+                                <span style={{
+                                  fontSize: '11px',
+                                  fontWeight: '800',
+                                  color: 'var(--text-muted)',
+                                  width: '20px',
                                   textAlign: 'center',
                                   opacity: 0.6
                                 }}>

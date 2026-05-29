@@ -28,15 +28,21 @@ export const calculateSessionPlayerRatings = (session, registeredPlayers = []) =
         teamName: t.name,
         teamWins: t.wins || 0,
         teamLosses: t.losses || 0,
-        cleanSheetsBonus: isZagueiro ? teamCleanSheets : 0
+        cleanSheetsBonus: isZagueiro ? (teamCleanSheets * 2) : (teamCleanSheets * 0.5)
       });
     });
   });
 
   if (allPlayers.length === 0) return [];
 
+  const maxGoals = Math.max(0, ...allPlayers.map(p => p.goals || 0));
+  const maxAssists = Math.max(0, ...allPlayers.map(p => p.assists || 0));
+
   allPlayers.forEach(p => {
-    p.rawScore = ((p.goals || 0) * 5) + ((p.assists || 0) * 4) + (p.teamWins * 1.5) + (p.teamLosses * -1) + (p.cleanSheetsBonus * 2);
+    const artilheiroBonus = (maxGoals > 0 && (p.goals || 0) === maxGoals) ? 3 : 0;
+    const garcomBonus = (maxAssists > 0 && (p.assists || 0) === maxAssists) ? 3 : 0;
+
+    p.rawScore = ((p.goals || 0) * 5) + ((p.assists || 0) * 4) + (p.teamWins * 2.5) + (p.teamLosses * -1) + (p.cleanSheetsBonus || 0) + artilheiroBonus + garcomBonus;
   });
 
   const minScore = Math.min(...allPlayers.map(p => p.rawScore));
@@ -295,7 +301,8 @@ export const getPlayersStatsForMonth = (sessions, registeredPlayers, monthKey) =
   });
 
   const playersWithRaw = Object.values(playerStatsMap).map(p => {
-    const rawScore = (p.total_gols * 5) + (p.total_assistencias * 4) + (p.total_vitorias * 1.5) + (p.artilheiroCount * 1) + (p.garcomCount * 1) + (p.mvpCount * 2) + (p.cleanSheetsCount * 2);
+    const csWeight = p.posicao === 'Zagueiro' ? 2 : 0.5;
+    const rawScore = (p.total_gols * 5) + (p.total_assistencias * 4) + (p.total_vitorias * 2.5) + (p.artilheiroCount * 3) + (p.garcomCount * 3) + (p.mvpCount * 4) + (p.cleanSheetsCount * csWeight);
     return { ...p, rawScore };
   });
 

@@ -66,6 +66,27 @@ export const useDatabase = () => {
     const statsGoleiroByName = {};
 
     newSessionsList.forEach(session => {
+      // Automatically calculate team stats from matches for sessions that have matches registered
+      if (session.matches) {
+        (session.teams || []).forEach(t => {
+          let wins = 0, draws = 0, losses = 0;
+          (session.matches || []).forEach(m => {
+            if (m.team1Id === t.id) {
+              if (m.score1 > m.score2) wins++;
+              else if (m.score1 === m.score2) draws++;
+              else if (m.score1 < m.score2) losses++;
+            } else if (m.team2Id === t.id) {
+              if (m.score2 > m.score1) wins++;
+              else if (m.score2 === m.score1) draws++;
+              else if (m.score2 < m.score1) losses++;
+            }
+          });
+          t.wins = wins;
+          t.draws = draws;
+          t.losses = losses;
+        });
+      }
+
       const teams = session.teams || [];
       if (teams.length === 0) return;
 
@@ -109,13 +130,10 @@ export const useDatabase = () => {
           const players = team.players || [];
           players.forEach(p => {
             const normName = p.name.trim().toLowerCase();
-            const rp = currentPlayers.find(reg => (reg.name || '').trim().toLowerCase() === normName);
-            if (rp?.posicao === 'Zagueiro') {
-              if (!statsByName[normName]) {
-                statsByName[normName] = { goals: 0, assists: 0, wins: 0, matchesForNota: 0, artilheiroCount: 0, garcomCount: 0, mvpCount: 0, cleanSheetsCount: 0 };
-              }
-              statsByName[normName].cleanSheetsCount += teamCS;
+            if (!statsByName[normName]) {
+              statsByName[normName] = { goals: 0, assists: 0, wins: 0, matchesForNota: 0, artilheiroCount: 0, garcomCount: 0, mvpCount: 0, cleanSheetsCount: 0 };
             }
+            statsByName[normName].cleanSheetsCount += teamCS;
           });
         }
       });
@@ -152,7 +170,8 @@ export const useDatabase = () => {
     const playerStatsWithRaw = currentPlayers.map(p => {
       const normName = (p.name || '').trim().toLowerCase();
       const s = statsByName[normName] || { goals: 0, assists: 0, wins: 0, matchesForNota: 0, artilheiroCount: 0, garcomCount: 0, mvpCount: 0, cleanSheetsCount: 0 };
-      const rawScore = (s.goals * 5) + (s.assists * 4) + (s.wins * 1.5) + (s.artilheiroCount * 1) + (s.garcomCount * 1) + (s.mvpCount * 2) + (s.cleanSheetsCount * 2);
+      const csWeight = p.posicao === 'Zagueiro' ? 2 : 0.5;
+      const rawScore = (s.goals * 5) + (s.assists * 4) + (s.wins * 2.5) + (s.artilheiroCount * 3) + (s.garcomCount * 3) + (s.mvpCount * 4) + (s.cleanSheetsCount * csWeight);
       return { p, s, rawScore };
     });
 
