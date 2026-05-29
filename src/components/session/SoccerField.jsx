@@ -24,8 +24,15 @@ const SoccerField = ({
   const isInitialState = allRatings.every(r => r.nota === 7.0);
   const showMVP = !isInitialState && maxNota > 0;
 
+  let rowGap = '15px';
+  if (count === 2) {
+    if (type === 'Zagueiro') rowGap = '50px';
+    else if (type === 'Meia') rowGap = '35px';
+    else if (type === 'Atacante') rowGap = '25px';
+  }
+
   return (
-    <div className="field-row" style={{ position: 'relative', gap: '15px' }}>
+    <div className="field-row" style={{ position: 'relative', '--row-gap': rowGap }}>
       {players.map((p, idx) => {
         let style = { transition: 'all 0.3s ease' };
         let nota = 0;
@@ -40,7 +47,9 @@ const SoccerField = ({
         const isMVP = nota > 0 && nota === maxNota;
 
         if (type === 'Atacante') {
-          if (count === 3) {
+          if (count === 2) {
+            style.transform = 'translateY(-6px)';
+          } else if (count === 3) {
             if (idx === 1) style.transform = 'translateY(-15px)';
             else style.transform = 'translateY(10px)';
           } else if (count === 4) {
@@ -51,12 +60,16 @@ const SoccerField = ({
             }
           }
         } else if (type === 'Meia') {
-          if (count === 3) {
+          if (count === 2) {
+            style.transform = 'translateY(0)';
+          } else if (count === 3) {
             if (idx === 1) style.transform = 'translateY(20px)';
             else style.transform = 'translateY(-10px)';
           }
         } else if (type === 'Zagueiro') {
-          if (count === 3) {
+          if (count === 2) {
+            style.transform = 'translateY(6px)';
+          } else if (count === 3) {
             if (idx === 1) style.transform = 'translateY(15px)';
             else style.transform = 'translateY(-10px)';
           } else if (count === 4) {

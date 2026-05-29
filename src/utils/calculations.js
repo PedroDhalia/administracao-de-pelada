@@ -383,7 +383,7 @@ export const getMonthlyHighlights = (sessions, registeredPlayers) => {
       const topChamp = getTop(playersArray, 'champWins');
 
       const attackers = playersArray.filter(p => p.posicao === 'Atacante').sort((a, b) => b.mvpScore - a.mvpScore).slice(0, 2);
-      const midfielders = playersArray.filter(p => p.posicao === 'Meia').sort((a, b) => b.mvpScore - a.mvpScore).slice(0, 1);
+      const midfielders = playersArray.filter(p => p.posicao === 'Meia').sort((a, b) => b.mvpScore - a.mvpScore).slice(0, 2);
       const defenders = playersArray.filter(p => p.posicao === 'Zagueiro').sort((a, b) => b.mvpScore - a.mvpScore).slice(0, 2);
       const allGoleiros = playersArray.filter(p => p.posicao === 'Goleiro').sort((a, b) => b.mvpScore - a.mvpScore);
 
@@ -400,7 +400,7 @@ export const getMonthlyHighlights = (sessions, registeredPlayers) => {
           topChamp,
           teamOfMonth: {
             atacantes: attackers,
-            meia: midfielders,
+            meias: midfielders,
             zagueiros: defenders,
             goleiro: allGoleiros[0] || null
           }

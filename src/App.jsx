@@ -2589,7 +2589,7 @@ function App() {
                             />
                             <SoccerField
                               users={users}
-                              players={hl.teamOfMonth.meia}
+                              players={hl.teamOfMonth.meias}
                               type="Meia"
                               sourceRatings={[]}
                               isHighlights={true}

@@ -303,7 +303,7 @@ h1, h2, h3, h4 {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 15px; /* Reduzido de 20 */
+  gap: var(--row-gap, 15px);
   width: 100%;
   z-index: 2;
 }
@@ -323,7 +323,7 @@ h1, h2, h3, h4 {
     width: 62px;
   }
   .field-row {
-    gap: 10px !important;
+    gap: calc(var(--row-gap, 15px) * 0.75) !important;
   }
   .field-player-name {
     font-size: 10px;
