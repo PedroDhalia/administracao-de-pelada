@@ -1050,7 +1050,7 @@ function App() {
                 <div className="admin-user-actions">
                   <button className="admin-action-btn admin-action-primary" onClick={() => handleChangePassword(u.id)}><Key size={13} /> Trocar Senha</button>
                   {!u.is_admin && <button className="admin-action-btn admin-action-promote" onClick={() => promoteToGlobalAdmin(u.id)}><Shield size={13} /> Promover</button>}
-                  {u.is_admin && u.id !== currentUser.id && (currentUser?.id === users[0]?.id || currentUser?.name?.toLowerCase() === 'pedro dhalia(pedrinho)' || currentUser?.name?.toLowerCase() === 'pedro dhalia') && <button className="admin-action-btn" style={{backgroundColor: 'transparent', border: '1px solid rgba(239, 68, 68, 0.5)', color: 'var(--danger)'}} onClick={() => demoteFromGlobalAdmin(u.id)}><Shield size={13} /> Rebaixar</button>}
+                  {u.is_admin && u.id !== currentUser.id && (currentUser?.id === users[0]?.id || (currentUser?.name && currentUser.name.toLowerCase().includes('pedro dhalia'))) && <button className="admin-action-btn" style={{backgroundColor: 'transparent', border: '1px solid rgba(239, 68, 68, 0.5)', color: 'var(--danger)'}} onClick={() => demoteFromGlobalAdmin(u.id)}><Shield size={13} /> Rebaixar</button>}
                   {u.id !== currentUser.id && <button className="admin-action-btn admin-action-danger" onClick={() => deleteUser(u.id)}><Trash2 size={13} /> Excluir</button>}
                 </div>
               </div>
@@ -2947,7 +2947,7 @@ function App() {
                       <div className="admin-user-actions">
                         <button className="admin-action-btn admin-action-primary" onClick={() => handleChangePassword(u.id)}><Key size={13} /> Trocar Senha</button>
                         {!u.is_admin && <button className="admin-action-btn admin-action-promote" onClick={() => promoteToGlobalAdmin(u.id)}><Shield size={13} /> Promover</button>}
-                        {u.is_admin && u.id !== currentUser.id && (currentUser?.id === users[0]?.id || currentUser?.name?.toLowerCase() === 'pedro dhalia(pedrinho)' || currentUser?.name?.toLowerCase() === 'pedro dhalia') && <button className="admin-action-btn" style={{backgroundColor: 'transparent', border: '1px solid rgba(239, 68, 68, 0.5)', color: 'var(--danger)'}} onClick={() => demoteFromGlobalAdmin(u.id)}><Shield size={13} /> Rebaixar</button>}
+                        {u.is_admin && u.id !== currentUser.id && (currentUser?.id === users[0]?.id || (currentUser?.name && currentUser.name.toLowerCase().includes('pedro dhalia'))) && <button className="admin-action-btn" style={{backgroundColor: 'transparent', border: '1px solid rgba(239, 68, 68, 0.5)', color: 'var(--danger)'}} onClick={() => demoteFromGlobalAdmin(u.id)}><Shield size={13} /> Rebaixar</button>}
                         {u.id !== currentUser.id && <button className="admin-action-btn admin-action-danger" onClick={() => deleteUser(u.id)}><Trash2 size={13} /> Excluir</button>}
                       </div>
                     </div>
