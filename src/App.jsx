@@ -77,11 +77,126 @@ function App() {
   const [comparePlayer1Id, setComparePlayer1Id] = useState(null);
   const [comparePlayer2Id, setComparePlayer2Id] = useState(null);
   const [compareMonthKey, setCompareMonthKey] = useState('');
+  const [activeTab, setActiveTab] = useState('home');
+  const [dirSearchQuery, setDirSearchQuery] = useState('');
+  const [dirSortConfig, setDirSortConfig] = useState('nome');
 
   useEffect(() => {
     setComparePlayer2Id(null);
     setCompareMonthKey('');
   }, [viewingPlayerId]);
+
+  const dashboardQuickStats = useMemo(() => {
+    if (!sessions || sessions.length === 0) return { totalSessions: 0, totalGoals: 0, totalPlayers: 0, monthLabel: '' };
+    const lastSession = sessions[0];
+    if (!lastSession.date || typeof lastSession.date !== 'string') return { totalSessions: 0, totalGoals: 0, totalPlayers: 0, monthLabel: '' };
+    const parts = lastSession.date.split('/');
+    if (parts.length !== 3) return { totalSessions: 0, totalGoals: 0, totalPlayers: 0, monthLabel: '' };
+    const targetMonthKey = `${parts[1].padStart(2, '0')}/${parts[2]}`;
+
+    const monthSessions = sessions.filter(s => {
+      if (!s.date || typeof s.date !== 'string') return false;
+      const p = s.date.split('/');
+      return p.length === 3 && `${p[1].padStart(2, '0')}/${p[2]}` === targetMonthKey;
+    });
+
+    const totalSessions = monthSessions.length;
+
+    let totalGoals = 0;
+    const uniquePlayers = new Set();
+
+    monthSessions.forEach(s => {
+      if (s.teams) {
+        s.teams.forEach(t => {
+          if (t.players) {
+            t.players.forEach(p => {
+              if (p.goals) totalGoals += p.goals;
+              if (p.name) uniquePlayers.add(p.name.trim().toLowerCase());
+            });
+          }
+        });
+      }
+    });
+
+    const totalPlayers = uniquePlayers.size;
+
+    const PortugueseMonths = {
+      '01': 'Janeiro', '02': 'Fevereiro', '03': 'Março', '04': 'Abril', '05': 'Maio', '06': 'Junho',
+      '07': 'Julho', '08': 'Agosto', '09': 'Setembro', '10': 'Outubro', '11': 'Novembro', '12': 'Dezembro'
+    };
+    const monthLabel = `${PortugueseMonths[parts[1].padStart(2, '0')] || parts[1]}/${parts[2]}`;
+
+    return { totalSessions, totalGoals, totalPlayers, monthLabel };
+  }, [sessions]);
+
+  const overallStats = useMemo(() => {
+    const totalSessions = sessions ? sessions.length : 0;
+    let totalGoals = 0;
+    if (sessions) {
+      sessions.forEach(s => {
+        if (s.teams) {
+          s.teams.forEach(t => {
+            if (t.players) {
+              t.players.forEach(p => {
+                totalGoals += (p.goals || 0);
+              });
+            }
+          });
+        }
+      });
+    }
+    const totalPlayers = registeredPlayers ? registeredPlayers.length : 0;
+    return { totalSessions, totalGoals, totalPlayers };
+  }, [sessions, registeredPlayers]);
+
+  const latestSessionHighlights = useMemo(() => {
+    if (!sessions || sessions.length === 0) return null;
+    const latest = sessions[0];
+
+    const ratedPlayers = calculateSessionPlayerRatings(latest, registeredPlayers);
+    const mvp = ratedPlayers.length > 0 ? ratedPlayers[0] : null;
+
+    const sessionPlayers = [];
+    if (latest.teams) {
+      latest.teams.forEach(t => {
+        if (t.players) {
+          t.players.forEach(p => {
+            sessionPlayers.push({ ...p, teamName: t.name });
+          });
+        }
+      });
+    }
+
+    const getPlayerNota = (playerName) => {
+      const r = ratedPlayers.find(r => r.name.trim().toLowerCase() === playerName.trim().toLowerCase());
+      return r ? r.nota : 0;
+    };
+
+    const topScorer = [...sessionPlayers]
+      .filter(p => (p.goals || 0) > 0)
+      .sort((a, b) => (b.goals || 0) - (a.goals || 0) || getPlayerNota(b.name) - getPlayerNota(a.name))[0] || null;
+
+    const topAssister = [...sessionPlayers]
+      .filter(p => (p.assists || 0) > 0)
+      .sort((a, b) => (b.assists || 0) - (a.assists || 0) || getPlayerNota(b.name) - getPlayerNota(a.name))[0] || null;
+
+    return {
+      sessionName: latest.name,
+      sessionDate: latest.date,
+      mvp,
+      topScorer,
+      topAssister,
+      matches: latest.matches || []
+    };
+  }, [sessions, registeredPlayers]);
+
+  const summaryRanking = useMemo(() => {
+    if (!registeredPlayers) return [];
+    return [...registeredPlayers]
+      .filter(p => (p.media_nota || 0) > 0)
+      .sort((a, b) => (b.media_nota || 0) - (a.media_nota || 0))
+      .slice(0, 5);
+  }, [registeredPlayers]);
 
   const togglePlayerStats = (id) => {
     setExpandedPlayerStats(prev => ({ ...prev, [id]: !prev[id] }));
@@ -155,6 +270,12 @@ function App() {
   const promoteToGlobalAdmin = (userId) => {
     if (!confirm("Tem certeza que quer dar poder absoluto para este usuário?")) return;
     const newUsers = users.map(u => u.id === userId ? { ...u, is_admin: true } : u);
+    set(ref(db, 'users'), newUsers);
+  };
+
+  const demoteFromGlobalAdmin = (userId) => {
+    if (!confirm("Tem certeza que quer remover os poderes de admin supremo deste usuário?")) return;
+    const newUsers = users.map(u => u.id === userId ? { ...u, is_admin: false } : u);
     set(ref(db, 'users'), newUsers);
   };
 
@@ -859,7 +980,7 @@ function App() {
   }
 
 
-  if (!loggedInUserId || (currentUser && !currentUser.jogadorId)) {
+  if (!loggedInUserId || !currentUser || !currentUser.jogadorId) {
     return (
       <AuthPage
         authMode={authMode}
@@ -900,9 +1021,358 @@ function App() {
     </div>
   );
 
+  const renderSupremeAdminModal = () => (
+    <div className="admin-overlay" style={{ zIndex: 10000 }}>
+      <div className="admin-panel card animated">
+        <header className="admin-panel-header">
+          <h2 className="admin-panel-title"><Database size={22} /> Área do Admin Supremo</h2>
+          <button className="admin-close-btn" onClick={() => setShowSupremeAdmin(false)}>✕</button>
+        </header>
+
+        <div className="admin-user-grid">
+          {users.sort((a, b) => a.name.localeCompare(b.name)).map(u => {
+            const linkedPlayer = registeredPlayers.find(p => p.id === u.jogadorId);
+            return (
+              <div key={u.id} className="admin-user-card">
+                <div className="admin-user-info">
+                  <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={linkedPlayer?.name || ''} size={40} />
+                  <div className="admin-user-details">
+                    <span className="admin-user-name">
+                      {u.name}
+                      {u.is_admin && <Shield size={14} color="#eab308" title="Admin Global" />}
+                    </span>
+                    <span className="admin-user-email">{u.email}</span>
+                    <span className="admin-user-linked">
+                      Jogador: {linkedPlayer ? <span style={{ color: 'var(--primary)' }}>{linkedPlayer.name}</span> : <span style={{ color: 'var(--danger)' }}>Nenhum</span>}
+                    </span>
+                  </div>
+                </div>
+                <div className="admin-user-actions">
+                  <button className="admin-action-btn admin-action-primary" onClick={() => handleChangePassword(u.id)}><Key size={13} /> Trocar Senha</button>
+                  {!u.is_admin && <button className="admin-action-btn admin-action-promote" onClick={() => promoteToGlobalAdmin(u.id)}><Shield size={13} /> Promover</button>}
+                  {u.is_admin && u.id !== currentUser.id && (currentUser?.id === users[0]?.id || currentUser?.name?.toLowerCase() === 'pedro dhalia(pedrinho)' || currentUser?.name?.toLowerCase() === 'pedro dhalia') && <button className="admin-action-btn" style={{backgroundColor: 'transparent', border: '1px solid rgba(239, 68, 68, 0.5)', color: 'var(--danger)'}} onClick={() => demoteFromGlobalAdmin(u.id)}><Shield size={13} /> Rebaixar</button>}
+                  {u.id !== currentUser.id && <button className="admin-action-btn admin-action-danger" onClick={() => deleteUser(u.id)}><Trash2 size={13} /> Excluir</button>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderBottomNav = () => {
+    const isHomeActive = activeTab === 'home' && !showPlayersScreen && !showMonthlyStatsScreen && !showGoleirosScreen && !showAllSessionsScreen && !showAllHighlightsScreen;
+    const isPartidasActive = activeTab === 'partidas' || showAllSessionsScreen;
+    const isRankingsActive = activeTab === 'ranking' || (activeTab !== 'menu' && (showPlayersScreen || showMonthlyStatsScreen));
+    const isMenuActive = activeTab === 'menu' || activeTab === 'players' || showGoleirosScreen;
+
+    return (
+      <nav className="bottom-nav">
+        <button
+          className={`bottom-nav-item ${isHomeActive ? 'active' : ''}`}
+          onClick={() => {
+            setActiveTab('home');
+            setShowPlayersScreen(false);
+            setShowMonthlyStatsScreen(false);
+            setShowGoleirosScreen(false);
+            setShowAllSessionsScreen(false);
+            setShowAllHighlightsScreen(false);
+            setShowProfile(false);
+            setActiveSessionId(null);
+          }}
+        >
+          <span className="bottom-nav-icon">🏠</span>
+          <span>Home</span>
+        </button>
+        <button
+          className={`bottom-nav-item ${isPartidasActive ? 'active' : ''}`}
+          onClick={() => {
+            setActiveTab('partidas');
+            setShowPlayersScreen(false);
+            setShowMonthlyStatsScreen(false);
+            setShowGoleirosScreen(false);
+            setShowAllSessionsScreen(true);
+            setShowAllHighlightsScreen(false);
+            setShowProfile(false);
+            setActiveSessionId(null);
+          }}
+        >
+          <span className="bottom-nav-icon">⚽</span>
+          <span>Peladas</span>
+        </button>
+        <button
+          className={`bottom-nav-item ${isRankingsActive ? 'active' : ''}`}
+          onClick={() => {
+            setActiveTab('ranking');
+            setShowPlayersScreen(false);
+            setShowMonthlyStatsScreen(false);
+            setShowGoleirosScreen(false);
+            setShowAllSessionsScreen(false);
+            setShowAllHighlightsScreen(false);
+            setShowProfile(false);
+            setActiveSessionId(null);
+          }}
+        >
+          <span className="bottom-nav-icon">📊</span>
+          <span>Rankings</span>
+        </button>
+        <button
+          className={`bottom-nav-item ${isMenuActive ? 'active' : ''}`}
+          onClick={() => {
+            setActiveTab('menu');
+            setShowPlayersScreen(false);
+            setShowMonthlyStatsScreen(false);
+            setShowGoleirosScreen(false);
+            setShowAllSessionsScreen(false);
+            setShowAllHighlightsScreen(false);
+            setShowProfile(false);
+            setActiveSessionId(null);
+          }}
+        >
+          <span className="bottom-nav-icon">⚙️</span>
+          <span>Menu</span>
+        </button>
+      </nav>
+    );
+  };
+
+  const renderRankingsLandingScreen = () => {
+    return (
+      <div className="main-content animated" style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
+        <header className="header" style={{ padding: '8px 0', borderBottom: 'none' }}>
+          <h1 style={{ margin: 0 }}>Rankings</h1>
+        </header>
+
+        <div className="menu-compact-grid" style={{ marginTop: '8px' }}>
+          <button className="menu-compact-btn" onClick={() => {
+            setShowPlayersScreen(true);
+            setShowMonthlyStatsScreen(false);
+          }}>
+            <span className="menu-compact-icon" style={{ fontSize: '24px' }}>📊</span>
+            <span>Ranking Geral</span>
+          </button>
+
+          <button className="menu-compact-btn" onClick={() => {
+            setShowMonthlyStatsScreen(true);
+            setShowPlayersScreen(false);
+          }}>
+            <span className="menu-compact-icon" style={{ fontSize: '24px' }}>📅</span>
+            <span>Ranking do Mês</span>
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderMenuScreen = () => (
+    <div className="main-content animated" style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px' }}>
+      <header className="header" style={{ padding: '8px 0', borderBottom: 'none' }}>
+        <h1 style={{ margin: 0 }}>Menu</h1>
+      </header>
+
+      <div className="card" style={{ padding: '20px', display: 'flex', alignItems: 'center', gap: '16px', backgroundColor: 'rgba(255,255,255,0.02)' }}>
+        <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={currentUser?.name} userId={currentUser?.id} size={60} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <strong style={{ fontSize: '18px', color: 'var(--text-main)' }}>{currentUser?.name}</strong>
+          <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{currentUser?.email}</span>
+          {isGlobalAdmin && (
+            <span style={{
+              fontSize: '11px',
+              color: 'var(--primary)',
+              backgroundColor: 'rgba(34, 197, 94, 0.1)',
+              padding: '2px 8px',
+              borderRadius: '12px',
+              fontWeight: 'bold',
+              width: 'fit-content',
+              marginTop: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}>
+              <Shield size={10} /> Admin Global
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="card" style={{ padding: '0', overflow: 'hidden' }}>
+        <button className="menu-item-btn" onClick={() => { setViewingPlayerId(currentUser?.jogadorId); setShowProfile(true); }}>
+          <span style={{ fontSize: '18px' }}>👤</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 'bold' }}>Meu Perfil</div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Veja suas estatísticas e evolução</div>
+          </div>
+        </button>
+
+        <button className="menu-item-btn" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }} onClick={() => setShowGoleirosScreen(true)}>
+          <span style={{ fontSize: '18px' }}>🧤</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 'bold' }}>Goleiros Cadastrados</div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Ranking e estatísticas de goleiros</div>
+          </div>
+        </button>
+
+        <button className="menu-item-btn" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }} onClick={() => setActiveTab('players')}>
+          <span style={{ fontSize: '18px' }}>👥</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 'bold' }}>Jogadores Cadastrados</div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Lista e estatísticas individuais de todos os jogadores</div>
+          </div>
+        </button>
+
+        {isGlobalAdmin && (
+          <button className="menu-item-btn" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }} onClick={() => setShowSupremeAdmin(true)}>
+            <span style={{ fontSize: '18px' }}>⚙️</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 'bold' }}>Painel de Controle</div>
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Gerencie senhas, admins e contas</div>
+            </div>
+          </button>
+        )}
+
+        <button className="menu-item-btn" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', color: 'var(--danger)' }} onClick={handleLogout}>
+          <span style={{ fontSize: '18px' }}>🚪</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 'bold' }}>Sair</div>
+            <div style={{ fontSize: '12px', color: 'rgba(255, 69, 58, 0.6)' }}>Efetuar logout da conta</div>
+          </div>
+        </button>
+      </div>
+    </div>
+  );
+
+  const renderPlayersDirectoryScreen = () => {
+    const filteredAndSorted = registeredPlayers
+      .filter(p => p.name.toLowerCase().includes(dirSearchQuery.toLowerCase()))
+      .sort((a, b) => {
+        if (dirSortConfig === 'nome') return a.name.localeCompare(b.name);
+        if (dirSortConfig === 'nota') return (b.media_nota || 0) - (a.media_nota || 0) || a.name.localeCompare(b.name);
+        if (dirSortConfig === 'jogos') {
+          const statsA = getPlayerStats(a.name, sessions, registeredPlayers, registeredGoleiros);
+          const statsB = getPlayerStats(b.name, sessions, registeredPlayers, registeredGoleiros);
+          return (statsB.peladasJogadas || 0) - (statsA.peladasJogadas || 0) || (b.media_nota || 0) - (a.media_nota || 0) || a.name.localeCompare(b.name);
+        }
+        return 0;
+      });
+
+    return (
+      <div className="main-content animated" style={{ padding: '16px' }}>
+        <header className="header" style={{ padding: '8px 0', borderBottom: 'none', gap: '12px', display: 'flex', alignItems: 'center' }}>
+          <button className="back-btn" onClick={() => setActiveTab('menu')}>
+            <ChevronLeft size={28} />
+          </button>
+          <h1 style={{ margin: 0 }}>Jogadores</h1>
+        </header>
+
+        <input
+          type="text"
+          className="input-field"
+          placeholder="🔍 Buscar atleta..."
+          value={dirSearchQuery}
+          onChange={(e) => setDirSearchQuery(e.target.value)}
+          style={{ marginBottom: '16px', backgroundColor: 'rgba(255,255,255,0.05)', width: '100%' }}
+        />
+
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+          {[
+            { key: 'nome', label: 'Nome', icon: '🔤' },
+            { key: 'nota', label: 'Nota', icon: '⭐' },
+            { key: 'jogos', label: 'Jogos', icon: '👟' }
+          ].map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setDirSortConfig(tab.key)}
+              style={{
+                flex: 1,
+                padding: '10px 12px',
+                borderRadius: '10px',
+                border: dirSortConfig === tab.key ? '1px solid var(--primary)' : '1px solid rgba(255,255,255,0.08)',
+                backgroundColor: dirSortConfig === tab.key ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.03)',
+                color: dirSortConfig === tab.key ? 'var(--primary)' : 'var(--text-muted)',
+                cursor: 'pointer',
+                fontWeight: 'bold',
+                fontSize: '13px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <span>{tab.icon}</span>
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {filteredAndSorted.length === 0 ? (
+          <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '20px' }}>Nenhum jogador encontrado.</p>
+        ) : (
+          <div className="player-list" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {filteredAndSorted.map(p => {
+              const stats = getPlayerStats(p.name, sessions, registeredPlayers, registeredGoleiros);
+              return (
+                <div
+                  key={p.id}
+                  className="card animated"
+                  style={{
+                    padding: '14px 16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    borderLeft: '4px solid var(--primary)',
+                    backgroundColor: 'var(--surface)'
+                  }}
+                  onClick={() => {
+                    setViewingPlayerId(p.id);
+                    setShowProfile(true);
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={p.name} size={40} />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                      <span style={{ fontSize: '15px', fontWeight: 'bold', color: 'var(--text-main)' }}>{p.name}</span>
+                      {p.posicao && (
+                        <span style={{
+                          fontSize: '10px',
+                          color: 'var(--primary)',
+                          backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          fontWeight: 'bold',
+                          width: 'fit-content'
+                        }}>
+                          {p.posicao}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                      <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>Jogos</span>
+                      <span style={{ fontSize: '14px', fontWeight: '800', color: 'var(--text-main)' }}>{stats.peladasJogadas}</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                      <span style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>Nota</span>
+                      <span style={{ fontSize: '14px', fontWeight: '800', color: '#eab308' }}>{p.media_nota ? p.media_nota.toFixed(2) : '0.00'}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   if (showProfile) {
     const targetPlayerId = viewingPlayerId || currentUser?.jogadorId;
     const profilePlayer = registeredPlayers.find(p => p.id === targetPlayerId) || registeredGoleiros.find(p => p.id === targetPlayerId);
+    const isGoleiro = registeredGoleiros.some(g => g.id === targetPlayerId);
     const profileStats = profilePlayer ? getPlayerStats(profilePlayer.name, sessions, registeredPlayers, registeredGoleiros) : null;
     const isOwnProfile = targetPlayerId === currentUser?.jogadorId;
 
@@ -914,13 +1384,13 @@ function App() {
       const player1 = registeredPlayers.find(p => p.id === p1Id);
       const player2 = registeredPlayers.find(p => p.id === p2Id);
       if (player1 && player2) {
-        const stats1 = compareMonthKey 
+        const stats1 = compareMonthKey
           ? getPlayerStatsForMonth(sessions, player1.name, compareMonthKey, registeredPlayers)
           : getPlayerStats(player1.name, sessions, registeredPlayers, registeredGoleiros);
-        const stats2 = compareMonthKey 
+        const stats2 = compareMonthKey
           ? getPlayerStatsForMonth(sessions, player2.name, compareMonthKey, registeredPlayers)
           : getPlayerStats(player2.name, sessions, registeredPlayers, registeredGoleiros);
-        
+
         let rating1 = 0;
         let rating2 = 0;
         if (compareMonthKey) {
@@ -1033,7 +1503,23 @@ function App() {
           </div>
           <div style={{ textAlign: 'center' }}>
             <h2 style={{ margin: 0 }}>{isOwnProfile ? currentUser?.name : profilePlayer?.name}</h2>
-            {isOwnProfile && <p style={{ color: 'var(--text-muted)', margin: 0, marginTop: 4 }}>{currentUser?.email}</p>}
+            <div style={{ marginTop: '8px' }}>
+              <span className="position-badge" style={{
+                display: 'inline-flex',
+                backgroundColor: isGoleiro ? 'rgba(168, 85, 247, 0.1)' : 'rgba(34, 197, 94, 0.1)',
+                color: isGoleiro ? '#a855f7' : 'var(--primary)',
+                padding: '4px 14px',
+                borderRadius: '20px',
+                fontSize: '13px',
+                fontWeight: '700',
+                border: `1px solid ${isGoleiro ? 'rgba(168, 85, 247, 0.2)' : 'rgba(34, 197, 94, 0.2)'}`,
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px'
+              }}>
+                {isGoleiro ? '🧤 Goleiro' : `🏃 ${profilePlayer?.posicao || 'Jogador'}`}
+              </span>
+            </div>
+            {isOwnProfile && <p style={{ color: 'var(--text-muted)', margin: 0, marginTop: 12 }}>{currentUser?.email}</p>}
             {isOwnProfile && profilePlayer && (
               <div style={{ marginTop: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', backgroundColor: 'rgba(255,255,255,0.05)', padding: '8px 16px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.1)' }}>
                 <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Jogador:</span>
@@ -1177,13 +1663,20 @@ function App() {
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12 }}>
                       {(() => {
-                        const first = evolutionData[0].nota;
+                        const prev = evolutionData[evolutionData.length - 2].nota;
                         const last = evolutionData[evolutionData.length - 1].nota;
-                        const totalDiff = last - first;
+                        const totalDiff = last - prev;
                         return (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: totalDiff >= 0 ? '#22c55e' : '#ef4444' }}>
-                            {totalDiff >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                            <span>Saldo Total: {totalDiff >= 0 ? '+' : ''}{totalDiff.toFixed(1)} pts na temporada</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: totalDiff > 0 ? '#22c55e' : totalDiff < 0 ? '#ef4444' : 'var(--text-muted)' }}>
+                            {totalDiff > 0 && <TrendingUp size={14} />}
+                            {totalDiff < 0 && <TrendingDown size={14} />}
+                            <span>
+                              {totalDiff > 0 
+                                ? `Subiu ${totalDiff.toFixed(1)} pts em relação ao mês passado` 
+                                : totalDiff < 0 
+                                  ? `Caiu ${Math.abs(totalDiff).toFixed(1)} pts em relação ao mês passado` 
+                                  : 'Sem alteração em relação ao mês passado'}
+                            </span>
                           </div>
                         );
                       })()}
@@ -1207,22 +1700,39 @@ function App() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: 16 }}>
-                {[
-                  { label: 'Peladas', value: profileStats.peladasJogadas, icon: '🏟️' },
-                  { label: 'Gols', value: profileStats.totalGoals, icon: '⚽' },
-                  { label: 'Assist.', value: profileStats.totalAssists, icon: '🎯' },
-                  { label: 'Win Rate', value: `${profileStats.winRate}%`, icon: '📈' },
-                ].map((s, i) => (
-                  <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '10px 4px', borderRadius: '12px', backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                    <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-main)' }}>{s.value}</span>
-                    <span style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{s.label}</span>
-                  </div>
-                ))}
-              </div>
+              {!isGoleiro ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', marginBottom: 16 }}>
+                  {[
+                    { label: 'Gols', value: profileStats.totalGoals, icon: '⚽' },
+                    { label: 'Assist.', value: profileStats.totalAssists, icon: '🎯' },
+                    { label: 'Nota', value: profilePlayer?.media_nota ? profilePlayer.media_nota.toFixed(2) : '0.00', icon: '⭐' },
+                    { label: 'MVPs', value: profileStats.mvpCount || 0, icon: '🏆' },
+                    { label: 'Jogos', value: profileStats.peladasJogadas, icon: '👟' }
+                  ].map((s, i) => (
+                    <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '10px 4px', borderRadius: '12px', backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <span style={{ fontSize: 16, marginBottom: '2px' }}>{s.icon}</span>
+                      <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-main)' }}>{s.value}</span>
+                      <span style={{ fontSize: 8.5, color: 'var(--text-muted)', textTransform: 'uppercase', marginTop: '2px', fontWeight: 'bold' }}>{s.label}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', marginBottom: 16 }}>
+                  {[
+                    { label: 'Vitórias', value: profilePlayer?.total_vitorias || 0, icon: '🏆' },
+                    { label: 'Defesas Dif.', value: profilePlayer?.total_defesas_dificeis || 0, icon: '🧤' }
+                  ].map((s, i) => (
+                    <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '12px 6px', borderRadius: '12px', backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <span style={{ fontSize: 18, marginBottom: '4px' }}>{s.icon}</span>
+                      <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-main)' }}>{s.value}</span>
+                      <span style={{ fontSize: 9.5, color: 'var(--text-muted)', textTransform: 'uppercase', marginTop: '2px', fontWeight: 'bold' }}>{s.label}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div style={{ marginTop: 20 }}>
-                <PlayerBadges playerName={profilePlayer.name} stats={profileStats} isPodium={false} />
+                <PlayerBadges playerName={profilePlayer?.name} stats={profileStats} isPodium={false} />
               </div>
 
               {profileStats.bestPartners && profileStats.bestPartners.length > 0 && (
@@ -1251,6 +1761,33 @@ function App() {
                 </div>
               )}
             </div>
+
+            {profileStats && profileStats.matchHistory && profileStats.matchHistory.length > 0 && (
+              <div className="card animated" style={{ padding: 24, marginTop: 16 }}>
+                <h3 style={{ fontSize: 16, color: 'var(--primary)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span>📅</span> Últimas Partidas
+                </h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {profileStats.matchHistory.slice(0, 10).map((mh, idx) => (
+                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.02)', padding: '12px 16px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.04)' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <span style={{ fontSize: '14px', color: 'var(--text-main)', fontWeight: '600' }}>{mh.sessionName}</span>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{mh.sessionDate}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{ display: 'flex', gap: 8, fontSize: '13px' }}>
+                          {mh.goals > 0 && <span style={{ color: 'var(--primary)', fontWeight: 'bold' }} title="Gols">⚽ {mh.goals}</span>}
+                          {mh.assists > 0 && <span style={{ color: 'var(--text-main)', fontWeight: 'bold' }} title="Assistências">🎯 {mh.assists}</span>}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, backgroundColor: 'rgba(234, 179, 8, 0.1)', padding: '6px 10px', borderRadius: '6px', border: '1px solid rgba(234, 179, 8, 0.2)' }}>
+                          <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#eab308' }} title="Nota">⭐ {mh.nota?.toFixed(1)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="card animated" style={{ padding: 24, marginTop: 16, marginBottom: 40 }}>
               <h3 style={{ fontSize: 16, color: 'var(--primary)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}><Users size={18} /> Comparar Estatísticas</h3>
@@ -1294,10 +1831,12 @@ function App() {
       return (
         <div className="app-container">
           <header className="header" style={{ gap: '16px' }}>
-            <button className="back-btn" onClick={() => setShowAllSessionsScreen(false)}>
-              <ChevronLeft size={28} />
-            </button>
-            <h1>Todas as Peladas</h1>
+            {activeTab !== 'partidas' && (
+              <button className="back-btn" onClick={() => setShowAllSessionsScreen(false)}>
+                <ChevronLeft size={28} />
+              </button>
+            )}
+            <h1>{activeTab === 'partidas' ? 'Peladas' : 'Todas as Peladas'}</h1>
           </header>
           <main className="main-content animated">
             <div className="session-list">
@@ -1324,6 +1863,7 @@ function App() {
               ))}
             </div>
           </main>
+          {renderBottomNav()}
         </div>
       );
     }
@@ -1347,7 +1887,10 @@ function App() {
       return (
         <div className="app-container">
           <header className="header" style={{ gap: '16px' }}>
-            <button className="back-btn" onClick={() => { setShowMonthlyStatsScreen(false); setSelectedMonthKey(null); }}>
+            <button className="back-btn" onClick={() => {
+              setShowMonthlyStatsScreen(false);
+              setSelectedMonthKey(null);
+            }}>
               <ChevronLeft size={28} />
             </button>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -1620,88 +2163,94 @@ function App() {
                         {showPodium && (
                           <div className="podium-container animated" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: '8px', paddingTop: '32px', paddingBottom: '16px', marginBottom: '8px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '30%', position: 'relative' }}>
-                              <div onClick={(e) => { e.stopPropagation(); setViewingPlayerId(podiumPlayers[1].id); setShowProfile(true); }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
-                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={podiumPlayers[1].name} size={48} />
-                                <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)', transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-main)'}>{podiumPlayers[1].name}</div>
-                              </div>
-                              <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[1])}</div>
-                              <PlayerBadges playerName={podiumPlayers[1].name} stats={getPlayerStatsForMonth(sessions, podiumPlayers[1].name, currentMonthKey)} isPodium={true} monthKey={currentMonthKey} />
-                              {isGlobalAdmin && (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
-                                  <select
-                                    value={registeredPlayers.find(rp => rp.id === podiumPlayers[1].id)?.posicao || ''}
-                                    onChange={(e) => {
-                                      const newPos = e.target.value;
-                                      const newList = registeredPlayers.map(rp => rp.id === podiumPlayers[1].id ? { ...rp, posicao: newPos } : rp);
-                                      set(ref(db, 'players'), newList);
-                                    }}
-                                    className="input-field"
-                                    style={{ padding: '2px 4px', fontSize: '10px', height: '24px', width: '90%', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderColor: 'rgba(34, 197, 94, 0.2)', color: 'var(--primary)', fontWeight: 'bold' }}
-                                  >
-                                    <option value="">Posição</option>
-                                    <option value="Zagueiro">Zag.</option>
-                                    <option value="Meia">Meia</option>
-                                    <option value="Atacante">Atac.</option>
-                                  </select>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', height: isGlobalAdmin ? '210px' : '160px', overflow: 'hidden', justifyContent: 'flex-start', marginBottom: '8px' }}>
+                                <div onClick={(e) => { e.stopPropagation(); setViewingPlayerId(podiumPlayers[1].id); setShowProfile(true); }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
+                                  <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={podiumPlayers[1].name} size={48} />
+                                  <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)', transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-main)'}>{podiumPlayers[1].name}</div>
                                 </div>
-                              )}
+                                <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[1])}</div>
+                                <PlayerBadges playerName={podiumPlayers[1].name} stats={getPlayerStatsForMonth(sessions, podiumPlayers[1].name, currentMonthKey)} isPodium={true} monthKey={currentMonthKey} />
+                                {isGlobalAdmin && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
+                                    <select
+                                      value={registeredPlayers.find(rp => rp.id === podiumPlayers[1].id)?.posicao || ''}
+                                      onChange={(e) => {
+                                        const newPos = e.target.value;
+                                        const newList = registeredPlayers.map(rp => rp.id === podiumPlayers[1].id ? { ...rp, posicao: newPos } : rp);
+                                        set(ref(db, 'players'), newList);
+                                      }}
+                                      className="input-field"
+                                      style={{ padding: '2px 4px', fontSize: '10px', height: '24px', width: '90%', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderColor: 'rgba(34, 197, 94, 0.2)', color: 'var(--primary)', fontWeight: 'bold' }}
+                                    >
+                                      <option value="">Posição</option>
+                                      <option value="Zagueiro">Zag.</option>
+                                      <option value="Meia">Meia</option>
+                                      <option value="Atacante">Atac.</option>
+                                    </select>
+                                  </div>
+                                )}
+                              </div>
                               <div onClick={() => togglePlayerStats(podiumPlayers[1].id)} style={{ width: '100%', height: '70px', backgroundColor: 'rgba(148, 163, 184, 0.15)', border: '1px solid rgba(148, 163, 184, 0.3)', borderBottom: 'none', borderRadius: '8px 8px 0 0', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', paddingTop: '8px', fontSize: '24px', cursor: 'pointer' }}>🥈</div>
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '35%', position: 'relative', zIndex: 10 }}>
                               <div style={{ position: 'absolute', top: '-28px', fontSize: '26px', filter: 'drop-shadow(0 2px 4px rgba(234,179,8,0.4))' }}>👑</div>
-                              <div onClick={(e) => { e.stopPropagation(); setViewingPlayerId(podiumPlayers[0].id); setShowProfile(true); }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
-                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={podiumPlayers[0].name} size={64} />
-                                <div style={{ marginTop: '8px', fontSize: '15px', fontWeight: 'bold', textAlign: 'center', color: '#eab308', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', transition: 'filter 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.filter = 'brightness(1.2)'} onMouseOut={(e) => e.currentTarget.style.filter = 'none'}>{podiumPlayers[0].name}</div>
-                              </div>
-                              <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[0])}</div>
-                              <PlayerBadges playerName={podiumPlayers[0].name} stats={getPlayerStatsForMonth(sessions, podiumPlayers[0].name, currentMonthKey)} isPodium={true} monthKey={currentMonthKey} />
-                              {isGlobalAdmin && (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
-                                  <select
-                                    value={registeredPlayers.find(rp => rp.id === podiumPlayers[0].id)?.posicao || ''}
-                                    onChange={(e) => {
-                                      const newPos = e.target.value;
-                                      const newList = registeredPlayers.map(rp => rp.id === podiumPlayers[0].id ? { ...rp, posicao: newPos } : rp);
-                                      set(ref(db, 'players'), newList);
-                                    }}
-                                    className="input-field"
-                                    style={{ padding: '2px 4px', fontSize: '10px', height: '24px', width: '90%', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderColor: 'rgba(34, 197, 94, 0.2)', color: 'var(--primary)', fontWeight: 'bold' }}
-                                  >
-                                    <option value="">Posição</option>
-                                    <option value="Zagueiro">Zag.</option>
-                                    <option value="Meia">Meia</option>
-                                    <option value="Atacante">Atac.</option>
-                                  </select>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', height: isGlobalAdmin ? '210px' : '160px', overflow: 'hidden', justifyContent: 'flex-start', marginBottom: '8px' }}>
+                                <div onClick={(e) => { e.stopPropagation(); setViewingPlayerId(podiumPlayers[0].id); setShowProfile(true); }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
+                                  <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={podiumPlayers[0].name} size={64} />
+                                  <div style={{ marginTop: '8px', fontSize: '15px', fontWeight: 'bold', textAlign: 'center', color: '#eab308', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', transition: 'filter 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.filter = 'brightness(1.2)'} onMouseOut={(e) => e.currentTarget.style.filter = 'none'}>{podiumPlayers[0].name}</div>
                                 </div>
-                              )}
+                                <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[0])}</div>
+                                <PlayerBadges playerName={podiumPlayers[0].name} stats={getPlayerStatsForMonth(sessions, podiumPlayers[0].name, currentMonthKey)} isPodium={true} monthKey={currentMonthKey} />
+                                {isGlobalAdmin && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
+                                    <select
+                                      value={registeredPlayers.find(rp => rp.id === podiumPlayers[0].id)?.posicao || ''}
+                                      onChange={(e) => {
+                                        const newPos = e.target.value;
+                                        const newList = registeredPlayers.map(rp => rp.id === podiumPlayers[0].id ? { ...rp, posicao: newPos } : rp);
+                                        set(ref(db, 'players'), newList);
+                                      }}
+                                      className="input-field"
+                                      style={{ padding: '2px 4px', fontSize: '10px', height: '24px', width: '90%', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderColor: 'rgba(34, 197, 94, 0.2)', color: 'var(--primary)', fontWeight: 'bold' }}
+                                    >
+                                      <option value="">Posição</option>
+                                      <option value="Zagueiro">Zag.</option>
+                                      <option value="Meia">Meia</option>
+                                      <option value="Atacante">Atac.</option>
+                                    </select>
+                                  </div>
+                                )}
+                              </div>
                               <div onClick={() => togglePlayerStats(podiumPlayers[0].id)} style={{ width: '100%', height: '100px', backgroundColor: 'rgba(234, 179, 8, 0.15)', border: '1px solid rgba(234, 179, 8, 0.4)', borderBottom: 'none', borderRadius: '8px 8px 0 0', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', paddingTop: '8px', fontSize: '28px', boxShadow: '0 -4px 12px rgba(234,179,8,0.1)', cursor: 'pointer' }}>🥇</div>
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '30%', position: 'relative' }}>
-                              <div onClick={(e) => { e.stopPropagation(); setViewingPlayerId(podiumPlayers[2].id); setShowProfile(true); }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
-                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={podiumPlayers[2].name} size={48} />
-                                <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)', transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-main)'}>{podiumPlayers[2].name}</div>
-                              </div>
-                              <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[2])}</div>
-                              <PlayerBadges playerName={podiumPlayers[2].name} stats={getPlayerStatsForMonth(sessions, podiumPlayers[2].name, currentMonthKey)} isPodium={true} monthKey={currentMonthKey} />
-                              {isGlobalAdmin && (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
-                                  <select
-                                    value={registeredPlayers.find(rp => rp.id === podiumPlayers[2].id)?.posicao || ''}
-                                    onChange={(e) => {
-                                      const newPos = e.target.value;
-                                      const newList = registeredPlayers.map(rp => rp.id === podiumPlayers[2].id ? { ...rp, posicao: newPos } : rp);
-                                      set(ref(db, 'players'), newList);
-                                    }}
-                                    className="input-field"
-                                    style={{ padding: '2px 4px', fontSize: '10px', height: '24px', width: '90%', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderColor: 'rgba(34, 197, 94, 0.2)', color: 'var(--primary)', fontWeight: 'bold' }}
-                                  >
-                                    <option value="">Posição</option>
-                                    <option value="Zagueiro">Zag.</option>
-                                    <option value="Meia">Meia</option>
-                                    <option value="Atacante">Atac.</option>
-                                  </select>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', height: isGlobalAdmin ? '210px' : '160px', overflow: 'hidden', justifyContent: 'flex-start', marginBottom: '8px' }}>
+                                <div onClick={(e) => { e.stopPropagation(); setViewingPlayerId(podiumPlayers[2].id); setShowProfile(true); }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
+                                  <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={podiumPlayers[2].name} size={48} />
+                                  <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)', transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-main)'}>{podiumPlayers[2].name}</div>
                                 </div>
-                              )}
+                                <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[2])}</div>
+                                <PlayerBadges playerName={podiumPlayers[2].name} stats={getPlayerStatsForMonth(sessions, podiumPlayers[2].name, currentMonthKey)} isPodium={true} monthKey={currentMonthKey} />
+                                {isGlobalAdmin && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
+                                    <select
+                                      value={registeredPlayers.find(rp => rp.id === podiumPlayers[2].id)?.posicao || ''}
+                                      onChange={(e) => {
+                                        const newPos = e.target.value;
+                                        const newList = registeredPlayers.map(rp => rp.id === podiumPlayers[2].id ? { ...rp, posicao: newPos } : rp);
+                                        set(ref(db, 'players'), newList);
+                                      }}
+                                      className="input-field"
+                                      style={{ padding: '2px 4px', fontSize: '10px', height: '24px', width: '90%', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderColor: 'rgba(34, 197, 94, 0.2)', color: 'var(--primary)', fontWeight: 'bold' }}
+                                    >
+                                      <option value="">Posição</option>
+                                      <option value="Zagueiro">Zag.</option>
+                                      <option value="Meia">Meia</option>
+                                      <option value="Atacante">Atac.</option>
+                                    </select>
+                                  </div>
+                                )}
+                              </div>
                               <div onClick={() => togglePlayerStats(podiumPlayers[2].id)} style={{ width: '100%', height: '50px', backgroundColor: 'rgba(180, 83, 9, 0.15)', border: '1px solid rgba(180, 83, 9, 0.3)', borderBottom: 'none', borderRadius: '8px 8px 0 0', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', paddingTop: '8px', fontSize: '22px', cursor: 'pointer' }}>🥉</div>
                             </div>
                           </div>
@@ -1729,7 +2278,7 @@ function App() {
               </>
             )}
           </main>
-
+          {renderBottomNav()}
         </div>
       );
     }
@@ -1986,99 +2535,107 @@ function App() {
                           <div className="podium-container animated" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: '8px', paddingTop: '32px', paddingBottom: '16px', marginBottom: '8px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                             {/* 2ND PLACE */}
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '30%', position: 'relative' }}>
-                              <div onClick={(e) => { e.stopPropagation(); setViewingPlayerId(podiumPlayers[1].id); setShowProfile(true); }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
-                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={podiumPlayers[1].name} size={48} />
-                                <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)', transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-main)'}>{podiumPlayers[1].name}</div>
-                              </div>
-                              <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[1])}</div>
-                              <PlayerBadges playerName={podiumPlayers[1].name} stats={getPlayerStats(podiumPlayers[1].name, sessions, registeredPlayers, registeredGoleiros)} isPodium={true} />
-                              {isGlobalAdmin && (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
-                                  <select
-                                    value={podiumPlayers[1].posicao || ''}
-                                    onChange={(e) => {
-                                      const newPos = e.target.value;
-                                      const newList = registeredPlayers.map(rp => rp.id === podiumPlayers[1].id ? { ...rp, posicao: newPos } : rp);
-                                      set(ref(db, 'players'), newList);
-                                    }}
-                                    className="input-field"
-                                    style={{ padding: '2px 4px', fontSize: '10px', height: '24px', width: '90%', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderColor: 'rgba(34, 197, 94, 0.2)', color: 'var(--primary)', fontWeight: 'bold' }}
-                                  >
-                                    <option value="">Posição</option>
-                                    <option value="Zagueiro">Zag.</option>
-                                    <option value="Meia">Meia</option>
-                                    <option value="Atacante">Atac.</option>
-                                  </select>
-                                  <button className="icon-btn" style={{ color: 'var(--primary)', border: '1px solid rgba(255,255,255,0.2)', fontSize: 10, padding: '2px 6px', borderRadius: '4px' }} onClick={(e) => { e.stopPropagation(); toggleGuestStatus(podiumPlayers[1].id, podiumPlayers[1].isGuest); }} title="Tornar Convidado">
-                                    Tornar Convidado
-                                  </button>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', height: isGlobalAdmin ? '230px' : '160px', overflow: 'hidden', justifyContent: 'flex-start', marginBottom: '8px' }}>
+                                <div onClick={(e) => { e.stopPropagation(); setViewingPlayerId(podiumPlayers[1].id); setShowProfile(true); }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
+                                  <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={podiumPlayers[1].name} size={48} />
+                                  <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)', transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-main)'}>{podiumPlayers[1].name}</div>
                                 </div>
-                              )}
+                                <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[1])}</div>
+                                <PlayerBadges playerName={podiumPlayers[1].name} stats={getPlayerStats(podiumPlayers[1].name, sessions, registeredPlayers, registeredGoleiros)} isPodium={true} />
+                                {isGlobalAdmin && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
+                                    <select
+                                      value={podiumPlayers[1].posicao || ''}
+                                      onChange={(e) => {
+                                        const newPos = e.target.value;
+                                        const newList = registeredPlayers.map(rp => rp.id === podiumPlayers[1].id ? { ...rp, posicao: newPos } : rp);
+                                        set(ref(db, 'players'), newList);
+                                      }}
+                                      className="input-field"
+                                      style={{ padding: '2px 4px', fontSize: '10px', height: '24px', width: '90%', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderColor: 'rgba(34, 197, 94, 0.2)', color: 'var(--primary)', fontWeight: 'bold' }}
+                                    >
+                                      <option value="">Posição</option>
+                                      <option value="Zagueiro">Zag.</option>
+                                      <option value="Meia">Meia</option>
+                                      <option value="Atacante">Atac.</option>
+                                    </select>
+                                    <button className="icon-btn" style={{ color: 'var(--primary)', border: '1px solid rgba(255,255,255,0.2)', fontSize: 10, padding: '2px 6px', borderRadius: '4px' }} onClick={(e) => { e.stopPropagation(); toggleGuestStatus(podiumPlayers[1].id, podiumPlayers[1].isGuest); }} title="Tornar Convidado">
+                                      Tornar Convidado
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                               <div onClick={() => togglePlayerStats(podiumPlayers[1].id)} style={{ width: '100%', height: '70px', backgroundColor: 'rgba(148, 163, 184, 0.15)', border: '1px solid rgba(148, 163, 184, 0.3)', borderBottom: 'none', borderRadius: '8px 8px 0 0', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', paddingTop: '8px', fontSize: '24px', cursor: 'pointer' }}>🥈</div>
                             </div>
 
                             {/* 1ST PLACE */}
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '35%', position: 'relative', zIndex: 10 }}>
                               <div style={{ position: 'absolute', top: '-28px', fontSize: '26px', filter: 'drop-shadow(0 2px 4px rgba(234,179,8,0.4))' }}>👑</div>
-                              <div onClick={(e) => { e.stopPropagation(); setViewingPlayerId(podiumPlayers[0].id); setShowProfile(true); }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
-                                <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={podiumPlayers[0].name} size={64} />
-                                <div style={{ marginTop: '8px', fontSize: '15px', fontWeight: 'bold', textAlign: 'center', color: '#eab308', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', transition: 'filter 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.filter = 'brightness(1.2)'} onMouseOut={(e) => e.currentTarget.style.filter = 'none'}>{podiumPlayers[0].name}</div>
-                              </div>
-                              <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[0])}</div>
-                              <PlayerBadges playerName={podiumPlayers[0].name} stats={getPlayerStats(podiumPlayers[0].name, sessions, registeredPlayers, registeredGoleiros)} isPodium={true} />
-                              {isGlobalAdmin && (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
-                                  <select
-                                    value={podiumPlayers[0].posicao || ''}
-                                    onChange={(e) => {
-                                      const newPos = e.target.value;
-                                      const newList = registeredPlayers.map(rp => rp.id === podiumPlayers[0].id ? { ...rp, posicao: newPos } : rp);
-                                      set(ref(db, 'players'), newList);
-                                    }}
-                                    className="input-field"
-                                    style={{ padding: '2px 4px', fontSize: '10px', height: '24px', width: '90%', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderColor: 'rgba(34, 197, 94, 0.2)', color: 'var(--primary)', fontWeight: 'bold' }}
-                                  >
-                                    <option value="">Posição</option>
-                                    <option value="Zagueiro">Zag.</option>
-                                    <option value="Meia">Meia</option>
-                                    <option value="Atacante">Atac.</option>
-                                  </select>
-                                  <button className="icon-btn" style={{ color: 'var(--primary)', border: '1px solid rgba(255,255,255,0.2)', fontSize: 10, padding: '2px 6px', borderRadius: '4px' }} onClick={(e) => { e.stopPropagation(); toggleGuestStatus(podiumPlayers[0].id, podiumPlayers[0].isGuest); }} title="Tornar Convidado">
-                                    Tornar Convidado
-                                  </button>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', height: isGlobalAdmin ? '230px' : '160px', overflow: 'hidden', justifyContent: 'flex-start', marginBottom: '8px' }}>
+                                <div onClick={(e) => { e.stopPropagation(); setViewingPlayerId(podiumPlayers[0].id); setShowProfile(true); }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
+                                  <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={podiumPlayers[0].name} size={64} />
+                                  <div style={{ marginTop: '8px', fontSize: '15px', fontWeight: 'bold', textAlign: 'center', color: '#eab308', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', transition: 'filter 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.filter = 'brightness(1.2)'} onMouseOut={(e) => e.currentTarget.style.filter = 'none'}>{podiumPlayers[0].name}</div>
                                 </div>
-                              )}
+                                <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[0])}</div>
+                                <PlayerBadges playerName={podiumPlayers[0].name} stats={getPlayerStats(podiumPlayers[0].name, sessions, registeredPlayers, registeredGoleiros)} isPodium={true} />
+                                {isGlobalAdmin && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
+                                    <select
+                                      value={podiumPlayers[0].posicao || ''}
+                                      onChange={(e) => {
+                                        const newPos = e.target.value;
+                                        const newList = registeredPlayers.map(rp => rp.id === podiumPlayers[0].id ? { ...rp, posicao: newPos } : rp);
+                                        set(ref(db, 'players'), newList);
+                                      }}
+                                      className="input-field"
+                                      style={{ padding: '2px 4px', fontSize: '10px', height: '24px', width: '90%', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderColor: 'rgba(34, 197, 94, 0.2)', color: 'var(--primary)', fontWeight: 'bold' }}
+                                    >
+                                      <option value="">Posição</option>
+                                      <option value="Zagueiro">Zag.</option>
+                                      <option value="Meia">Meia</option>
+                                      <option value="Atacante">Atac.</option>
+                                    </select>
+                                    <button className="icon-btn" style={{ color: 'var(--primary)', border: '1px solid rgba(255,255,255,0.2)', fontSize: 10, padding: '2px 6px', borderRadius: '4px' }} onClick={(e) => { e.stopPropagation(); toggleGuestStatus(podiumPlayers[0].id, podiumPlayers[0].isGuest); }} title="Tornar Convidado">
+                                      Tornar Convidado
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                               <div onClick={() => togglePlayerStats(podiumPlayers[0].id)} style={{ width: '100%', height: '100px', backgroundColor: 'rgba(234, 179, 8, 0.15)', border: '1px solid rgba(234, 179, 8, 0.4)', borderBottom: 'none', borderRadius: '8px 8px 0 0', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', paddingTop: '8px', fontSize: '28px', boxShadow: '0 -4px 12px rgba(234,179,8,0.1)', cursor: 'pointer' }}>🥇</div>
                             </div>
 
                             {/* 3RD PLACE */}
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '30%', position: 'relative' }}>
-                              <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={podiumPlayers[2].name} size={48} />
-                              <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)' }}>{podiumPlayers[2].name}</div>
-                              <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[2])}</div>
-                              <PlayerBadges playerName={podiumPlayers[2].name} stats={getPlayerStats(podiumPlayers[2].name, sessions, registeredPlayers, registeredGoleiros)} isPodium={true} />
-                              {isGlobalAdmin && (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
-                                  <select
-                                    value={podiumPlayers[2].posicao || ''}
-                                    onChange={(e) => {
-                                      const newPos = e.target.value;
-                                      const newList = registeredPlayers.map(rp => rp.id === podiumPlayers[2].id ? { ...rp, posicao: newPos } : rp);
-                                      set(ref(db, 'players'), newList);
-                                    }}
-                                    className="input-field"
-                                    style={{ padding: '2px 4px', fontSize: '10px', height: '24px', width: '90%', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderColor: 'rgba(34, 197, 94, 0.2)', color: 'var(--primary)', fontWeight: 'bold' }}
-                                  >
-                                    <option value="">Posição</option>
-                                    <option value="Zagueiro">Zag.</option>
-                                    <option value="Meia">Meia</option>
-                                    <option value="Atacante">Atac.</option>
-                                  </select>
-                                  <button className="icon-btn" style={{ color: 'var(--primary)', border: '1px solid rgba(255,255,255,0.2)', fontSize: 10, padding: '2px 6px', borderRadius: '4px' }} onClick={(e) => { e.stopPropagation(); toggleGuestStatus(podiumPlayers[2].id, podiumPlayers[2].isGuest); }} title="Tornar Convidado">
-                                    Tornar Convidado
-                                  </button>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', height: isGlobalAdmin ? '230px' : '160px', overflow: 'hidden', justifyContent: 'flex-start', marginBottom: '8px' }}>
+                                <div onClick={(e) => { e.stopPropagation(); setViewingPlayerId(podiumPlayers[2].id); setShowProfile(true); }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', cursor: 'pointer' }} title="Ver perfil">
+                                  <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={podiumPlayers[2].name} size={48} />
+                                  <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)' }}>{podiumPlayers[2].name}</div>
                                 </div>
-                              )}
+                                <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[2])}</div>
+                                <PlayerBadges playerName={podiumPlayers[2].name} stats={getPlayerStats(podiumPlayers[2].name, sessions, registeredPlayers, registeredGoleiros)} isPodium={true} />
+                                {isGlobalAdmin && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
+                                    <select
+                                      value={podiumPlayers[2].posicao || ''}
+                                      onChange={(e) => {
+                                        const newPos = e.target.value;
+                                        const newList = registeredPlayers.map(rp => rp.id === podiumPlayers[2].id ? { ...rp, posicao: newPos } : rp);
+                                        set(ref(db, 'players'), newList);
+                                      }}
+                                      className="input-field"
+                                      style={{ padding: '2px 4px', fontSize: '10px', height: '24px', width: '90%', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderColor: 'rgba(34, 197, 94, 0.2)', color: 'var(--primary)', fontWeight: 'bold' }}
+                                    >
+                                      <option value="">Posição</option>
+                                      <option value="Zagueiro">Zag.</option>
+                                      <option value="Meia">Meia</option>
+                                      <option value="Atacante">Atac.</option>
+                                    </select>
+                                    <button className="icon-btn" style={{ color: 'var(--primary)', border: '1px solid rgba(255,255,255,0.2)', fontSize: 10, padding: '2px 6px', borderRadius: '4px' }} onClick={(e) => { e.stopPropagation(); toggleGuestStatus(podiumPlayers[2].id, podiumPlayers[2].isGuest); }} title="Tornar Convidado">
+                                      Tornar Convidado
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                               <div onClick={() => togglePlayerStats(podiumPlayers[2].id)} style={{ width: '100%', height: '50px', backgroundColor: 'rgba(180, 83, 9, 0.15)', border: '1px solid rgba(180, 83, 9, 0.3)', borderBottom: 'none', borderRadius: '8px 8px 0 0', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', paddingTop: '8px', fontSize: '22px', cursor: 'pointer' }}>🥉</div>
                             </div>
                           </div>
@@ -2108,7 +2665,7 @@ function App() {
               </>
             )}
           </main>
-
+          {renderBottomNav()}
         </div>
       );
     }
@@ -2191,7 +2748,8 @@ function App() {
               </>
             )}
           </main>
-
+          {showSupremeAdmin && isGlobalAdmin && renderSupremeAdminModal()}
+          {renderBottomNav()}
         </div>
       );
     }
@@ -2306,18 +2864,47 @@ function App() {
               ))}
             </div>
           </main>
+          {renderBottomNav()}
+        </div>
+      );
+    }
 
+    if (activeTab === 'ranking') {
+      return (
+        <div className="app-container">
+          {renderRankingsLandingScreen()}
+          {renderBottomNav()}
+        </div>
+      );
+    }
+
+    if (activeTab === 'players') {
+      return (
+        <div className="app-container">
+          {renderPlayersDirectoryScreen()}
+          {renderBottomNav()}
+        </div>
+      );
+    }
+
+    if (activeTab === 'menu') {
+      return (
+        <div className="app-container">
+          {showSupremeAdmin && isGlobalAdmin && renderSupremeAdminModal()}
+          {renderMenuScreen()}
+          {renderBottomNav()}
         </div>
       );
     }
 
     return (
       <div className="app-container">
+        {showSupremeAdmin && isGlobalAdmin && renderSupremeAdminModal()}
 
         <header className="header app-header-main">
           <div className="app-header-top">
             <img src="/logo.png" alt="Selva FC Logo" style={{ width: 48, height: 48 }} />
-            <h1>Pelada Selva</h1>
+            <h1>Pelada</h1>
           </div>
           <div className="app-header-actions">
             <span onClick={() => setShowProfile(true)} className="user-pill">
@@ -2360,6 +2947,7 @@ function App() {
                       <div className="admin-user-actions">
                         <button className="admin-action-btn admin-action-primary" onClick={() => handleChangePassword(u.id)}><Key size={13} /> Trocar Senha</button>
                         {!u.is_admin && <button className="admin-action-btn admin-action-promote" onClick={() => promoteToGlobalAdmin(u.id)}><Shield size={13} /> Promover</button>}
+                        {u.is_admin && u.id !== currentUser.id && (currentUser?.id === users[0]?.id || currentUser?.name?.toLowerCase() === 'pedro dhalia(pedrinho)' || currentUser?.name?.toLowerCase() === 'pedro dhalia') && <button className="admin-action-btn" style={{backgroundColor: 'transparent', border: '1px solid rgba(239, 68, 68, 0.5)', color: 'var(--danger)'}} onClick={() => demoteFromGlobalAdmin(u.id)}><Shield size={13} /> Rebaixar</button>}
                         {u.id !== currentUser.id && <button className="admin-action-btn admin-action-danger" onClick={() => deleteUser(u.id)}><Trash2 size={13} /> Excluir</button>}
                       </div>
                     </div>
@@ -2372,78 +2960,6 @@ function App() {
         )}
 
         <main className="main-content">
-
-          <button className="card animated" style={{
-            width: '100%',
-            padding: '16px',
-            marginBottom: '12px',
-            backgroundColor: 'rgba(234, 179, 8, 0.05)',
-            border: '1px solid rgba(234, 179, 8, 0.3)',
-            borderRadius: '12px',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '12px',
-            cursor: 'pointer',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-          }} onClick={() => setShowPlayersScreen(true)}>
-            <div style={{ backgroundColor: 'rgba(234, 179, 8, 0.15)', padding: '12px', borderRadius: '50%', color: '#eab308' }}>
-              <Trophy size={28} />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <span style={{ fontSize: 18, fontWeight: 'bold', color: '#eab308', textAlign: 'center', letterSpacing: '-0.5px' }}>Estatísticas Gerais dos Jogadores</span>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', marginTop: 4 }}>Explore o ranking global de desempenho</span>
-            </div>
-          </button>
-
-          <button className="card animated" style={{
-            width: '100%',
-            padding: '12px 16px',
-            marginBottom: '12px',
-            backgroundColor: 'rgba(34, 197, 94, 0.05)',
-            border: '1px solid rgba(34, 197, 94, 0.3)',
-            borderRadius: '12px',
-            display: 'flex',
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'flex-start',
-            gap: '12px',
-            cursor: 'pointer',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-          }} onClick={() => setShowMonthlyStatsScreen(true)}>
-            <div style={{ backgroundColor: 'rgba(34, 197, 94, 0.15)', padding: '10px', borderRadius: '50%', color: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Calendar size={20} />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-              <span style={{ fontSize: 16, fontWeight: 'bold', color: '#22c55e', letterSpacing: '-0.5px' }}>Estatísticas por mês</span>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Ranking detalhado de cada mês</span>
-            </div>
-          </button>
-
-          <button className="card animated" style={{
-            width: '100%',
-            padding: '12px 16px',
-            marginBottom: '24px',
-            backgroundColor: 'rgba(168, 85, 247, 0.05)',
-            border: '1px solid rgba(168, 85, 247, 0.3)',
-            borderRadius: '12px',
-            display: 'flex',
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'flex-start',
-            gap: '12px',
-            cursor: 'pointer',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-          }} onClick={() => setShowGoleirosScreen(true)}>
-            <div style={{ backgroundColor: 'rgba(168, 85, 247, 0.15)', padding: '10px', borderRadius: '50%', color: '#a855f7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ fontSize: '20px', lineHeight: 1 }}>🧤</span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-              <span style={{ fontSize: 16, fontWeight: 'bold', color: '#a855f7', letterSpacing: '-0.5px' }}>Estatísticas de Goleiros</span>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{registeredGoleiros.length} goleiros na base de dados</span>
-            </div>
-          </button>
 
           {allHighlights.length > 0 && (
             <div className="highlights-section animated" style={{ marginBottom: 8 }}>
@@ -2637,35 +3153,100 @@ function App() {
           ) : (
             <div className="session-list" style={{ marginBottom: '24px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <h2 style={{ fontSize: '18px', color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Calendar color="var(--primary)" size={20} />
-                  Última Pelada
+                <h2 style={{ fontSize: '15px', color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontFamily: "'Outfit', sans-serif" }}>
+                  ⚽ Última Pelada
                 </h2>
                 {sessions.length > 1 && (
-                  <button className="btn-primary" style={{ padding: '6px 12px', fontSize: '12px', backgroundColor: 'transparent', border: '1px solid var(--primary)', color: 'var(--primary)' }} onClick={() => setShowAllSessionsScreen(true)}>
+                  <button className="btn-primary" style={{ padding: '6px 12px', fontSize: '12px', backgroundColor: 'transparent', border: '1px solid var(--primary)', color: 'var(--primary)' }} onClick={() => { setActiveTab('partidas'); setShowAllSessionsScreen(true); }}>
                     Ver Todas ({sessions.length})
                   </button>
                 )}
               </div>
 
-              <div className="card animated">
-                <div className="card-header cursor-pointer" onClick={() => setActiveSessionId(sessions[0].id)}>
-                  <div>
-                    <span className="card-title">
-                      <Calendar size={18} color="var(--primary)" />
-                      {sessions[0].name}
-                      {canEditSession(sessions[0]) && <button className="icon-btn" style={{ padding: 4, marginLeft: 6, color: 'var(--text-muted)' }} onClick={(e) => { e.stopPropagation(); editSessionName(sessions[0].id, sessions[0].name); }}><Pencil size={14} /></button>}
-                    </span>
-                    <span className="card-meta">{sessions[0].teams?.length || 0} times cadastrados</span>
-                  </div>
-                  <div className="card-actions" onClick={e => e.stopPropagation()}>
-                    {canEditSession(sessions[0]) && (
-                      <button className="icon-btn danger" style={{ color: 'var(--danger)' }} onClick={() => removeSession(sessions[0].id)}>
-                        <Trash2 size={16} />
-                      </button>
-                    )}
-                  </div>
+              {/* Card de Última Pelada simplificado */}
+              <div className="card animated" style={{ padding: '16px', cursor: 'pointer' }} onClick={() => setActiveSessionId(sessions[0].id)}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '13px', color: 'var(--text-main)', fontWeight: 'bold' }}>📅 Pelada do dia {latestSessionHighlights.sessionDate}</span>
+                  <span style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 'bold', backgroundColor: 'rgba(34, 197, 94, 0.1)', padding: '4px 10px', borderRadius: '12px' }}>Ver Detalhes →</span>
                 </div>
+              </div>
+
+              {/* Destaques da Rodada */}
+              <h2 style={{ fontSize: '15px', color: 'var(--text-main)', margin: '20px 0 12px 0', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: "'Outfit', sans-serif" }}>
+                🏆 Destaques da Rodada
+              </h2>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '24px' }} className="animated">
+                {/* MVP */}
+                <div className="card animated" style={{ padding: '12px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', textAlign: 'center', background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.05) 0%, rgba(0,0,0,0.1) 100%)', border: '1px solid rgba(234, 179, 8, 0.15)', cursor: 'pointer' }} onClick={() => {
+                  const pObj = registeredPlayers.find(rp => rp.name === latestSessionHighlights.mvp?.name) || registeredGoleiros.find(rg => rg.name === latestSessionHighlights.mvp?.name);
+                  if (pObj) { setViewingPlayerId(pObj.id); setShowProfile(true); }
+                }}>
+                  <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#eab308', textTransform: 'uppercase', letterSpacing: '0.5px' }}>👑 MVP</span>
+                  <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={latestSessionHighlights.mvp?.name} size={36} />
+                  <span style={{ fontSize: '12px', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>{latestSessionHighlights.mvp ? latestSessionHighlights.mvp.name : '-'}</span>
+                  <span style={{ fontSize: '11px', color: '#eab308', fontWeight: 'bold' }}>{latestSessionHighlights.mvp ? `Nota ${latestSessionHighlights.mvp.nota.toFixed(1)}` : '-'}</span>
+                </div>
+
+                {/* ARTILHEIRO */}
+                <div className="card animated" style={{ padding: '12px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', textAlign: 'center', background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.05) 0%, rgba(0,0,0,0.1) 100%)', border: '1px solid rgba(34, 197, 94, 0.15)', cursor: 'pointer' }} onClick={() => {
+                  const pObj = registeredPlayers.find(rp => rp.name === latestSessionHighlights.topScorer?.name) || registeredGoleiros.find(rg => rg.name === latestSessionHighlights.topScorer?.name);
+                  if (pObj) { setViewingPlayerId(pObj.id); setShowProfile(true); }
+                }}>
+                  <span style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>⚽ Artilheiro</span>
+                  <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={latestSessionHighlights.topScorer?.name} size={36} />
+                  <span style={{ fontSize: '12px', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>{latestSessionHighlights.topScorer ? latestSessionHighlights.topScorer.name : '-'}</span>
+                  <span style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 'bold' }}>{latestSessionHighlights.topScorer ? `${latestSessionHighlights.topScorer.goals} Gols` : '-'}</span>
+                </div>
+
+                {/* ASSISTENTE */}
+                <div className="card animated" style={{ padding: '12px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', textAlign: 'center', background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.05) 0%, rgba(0,0,0,0.1) 100%)', border: '1px solid rgba(168, 85, 247, 0.15)', cursor: 'pointer' }} onClick={() => {
+                  const pObj = registeredPlayers.find(rp => rp.name === latestSessionHighlights.topAssister?.name) || registeredGoleiros.find(rg => rg.name === latestSessionHighlights.topAssister?.name);
+                  if (pObj) { setViewingPlayerId(pObj.id); setShowProfile(true); }
+                }}>
+                  <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#a855f7', textTransform: 'uppercase', letterSpacing: '0.5px' }}>🎯 Garçom</span>
+                  <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={latestSessionHighlights.topAssister?.name} size={36} />
+                  <span style={{ fontSize: '12px', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>{latestSessionHighlights.topAssister ? latestSessionHighlights.topAssister.name : '-'}</span>
+                  <span style={{ fontSize: '11px', color: '#a855f7', fontWeight: 'bold' }}>{latestSessionHighlights.topAssister ? `${latestSessionHighlights.topAssister.assists} Assist.` : '-'}</span>
+                </div>
+              </div>
+
+              {/* Ranking Resumido */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '24px 0 12px 0' }}>
+                <h2 style={{ fontSize: '15px', color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontFamily: "'Outfit', sans-serif" }}>
+                  📊 Ranking Resumido (Top 5)
+                </h2>
+                <button className="btn-primary" style={{ padding: '6px 12px', fontSize: '12px', backgroundColor: 'transparent', border: '1px solid var(--primary)', color: 'var(--primary)' }} onClick={() => { setActiveTab('ranking'); setShowPlayersScreen(true); setShowMonthlyStatsScreen(false); }}>
+                  Ver Completo
+                </button>
+              </div>
+
+              <div className="card animated" style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {summaryRanking.length === 0 ? (
+                  <p style={{ color: 'var(--text-muted)', fontSize: 13, textAlign: 'center', padding: '10px 0' }}>Nenhum jogador pontuou ainda.</p>
+                ) : (
+                  summaryRanking.map((p, idx) => {
+                    let color = 'var(--text-main)';
+                    if (p.media_nota >= 9) color = '#22c55e';
+                    else if (p.media_nota >= 7) color = '#4ade80';
+                    else if (p.media_nota >= 5) color = '#eab308';
+                    else color = '#ef4444';
+
+                    return (
+                      <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: idx < summaryRanking.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }} onClick={() => { setViewingPlayerId(p.id); setShowProfile(true); }}>
+                          <span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-muted)', width: '20px', textAlign: 'center', opacity: 0.6 }}>{idx + 1}º</span>
+                          <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={p.name} size={32} />
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontSize: '14px', fontWeight: '600' }}>{p.name}</span>
+                            {p.posicao && <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{p.posicao}</span>}
+                          </div>
+                        </div>
+                        <span style={{ fontWeight: 'bold', color: color, fontSize: '14px' }}>{p.media_nota ? p.media_nota.toFixed(2) : '0.00'}</span>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
           )}
@@ -2701,6 +3282,7 @@ function App() {
             <img src="/ditador.png" alt="O Ditador" style={{ width: '100px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }} />
           </div>
         </main>
+        {renderBottomNav()}
       </div>
     );
   }
@@ -2859,38 +3441,61 @@ function App() {
             <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 20 }}>Admins podem editar os resultados desta pelada.</p>
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12, paddingRight: 4 }}>
               {(() => {
-                const sessionPlayers = activeSession.teams?.flatMap(t => t.players?.filter(p => registeredPlayers.find(rp => rp.name === p.name)?.userId) || []) || [];
-                if (sessionPlayers.length === 0) return <p style={{ color: 'var(--text-muted)' }}>Nenhum jogador com conta cadastrada está listado na pelada.</p>;
-
-                // Remove duplicates
                 const uniqueUserIds = new Set();
-                const playersToRender = [];
+                const usersToRender = [];
+
+                if (activeSession.admins) {
+                  activeSession.admins.forEach(adminId => {
+                    if (!uniqueUserIds.has(adminId)) {
+                      uniqueUserIds.add(adminId);
+                      usersToRender.push({ userId: adminId, isAdmin: true });
+                    }
+                  });
+                }
+
+                const sessionPlayers = activeSession.teams?.flatMap(t => t.players?.filter(p => registeredPlayers.find(rp => rp.name === p.name)?.userId) || []) || [];
                 for (const p of sessionPlayers) {
                   const rp = registeredPlayers.find(rp => rp.name === p.name);
                   if (rp && rp.userId && !uniqueUserIds.has(rp.userId)) {
                     uniqueUserIds.add(rp.userId);
-                    playersToRender.push({ ...p, userId: rp.userId });
+                    usersToRender.push({ userId: rp.userId, isAdmin: false });
                   }
                 }
 
-                return playersToRender.map(p => {
-                  const isAdmin = activeSession.admins?.includes(p.userId);
-                  const userObj = users.find(u => u.id === p.userId);
+                if (usersToRender.length === 0) return <p style={{ color: 'var(--text-muted)' }}>Nenhum administrador ou jogador cadastrado encontrado.</p>;
+
+                return usersToRender.map(item => {
+                  const { userId, isAdmin } = item;
+                  const userObj = users.find(u => u.id === userId);
                   if (!userObj) return null;
+
+                  const isCreator = activeSession.criador === currentUser?.id;
+                  const canManage = isCreator;
+                  const isSelf = userId === currentUser?.id;
+
+                  const linkedPlayer = registeredPlayers.find(rp => rp.userId === userId);
+                  const playerNameText = linkedPlayer ? linkedPlayer.name : 'Não vinculado';
+
                   return (
-                    <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 12, border: isAdmin ? '1px solid rgba(168, 85, 247, 0.3)' : '1px solid transparent' }}>
+                    <div key={userId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 12, border: isAdmin ? '1px solid rgba(168, 85, 247, 0.3)' : '1px solid transparent' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <strong style={{ fontSize: 16 }}>{userObj.name}</strong>
                           {isAdmin && <Shield size={14} color="var(--primary)" title="Admin" />}
                         </div>
-                        <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Jogador atrelado: {p.name}</span>
+                        <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Jogador atrelado: {playerNameText}</span>
                       </div>
                       <div>
                         {isAdmin ? (
-                          <button onClick={() => demoteFromAdmin(p.userId)} className="btn-primary" style={{ backgroundColor: 'transparent', border: '1px solid rgba(239, 68, 68, 0.5)', color: 'var(--danger)', padding: '6px 12px', fontSize: 13 }}>Remover Admin</button>
+                          canManage && !isSelf ? (
+                            <button onClick={() => demoteFromAdmin(userId)} className="btn-primary" style={{ backgroundColor: 'transparent', border: '1px solid rgba(239, 68, 68, 0.5)', color: 'var(--danger)', padding: '6px 12px', fontSize: 13 }}>Remover Admin</button>
+                          ) : isSelf ? (
+                            <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Você</span>
+                          ) : null
                         ) : (
-                          <button onClick={() => promoteToAdmin(p.userId)} className="btn-primary" style={{ padding: '6px 12px', fontSize: 13 }}>Tornar Admin</button>
+                          canManage ? (
+                            <button onClick={() => promoteToAdmin(userId)} className="btn-primary" style={{ padding: '6px 12px', fontSize: 13 }}>Tornar Admin</button>
+                          ) : null
                         )}
                       </div>
                     </div>
@@ -3085,11 +3690,71 @@ function App() {
                             {team.name} ({team.players?.length || 0}/5)
 
                             {/* Botão para editar nome do Time */}
-                            {canEditSession(activeSession) && <button className="icon-btn" style={{ padding: 4, marginLeft: 6, color: headerTextColor, opacity: 0.8 }} onClick={(e) => { e.stopPropagation(); editTeamName(team.id, team.name); }}><Pencil size={14} /></button>}
+                            {canEditSession(activeSession) && (
+                              <button
+                                style={{
+                                  padding: '5px',
+                                  marginLeft: '6px',
+                                  backgroundColor: headerTextColor === '#000000' ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.1)',
+                                  border: `1px solid ${headerTextColor === '#000000' ? 'rgba(0, 0, 0, 0.15)' : 'rgba(255, 255, 255, 0.2)'}`,
+                                  color: headerTextColor,
+                                  borderRadius: '6px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s ease',
+                                  opacity: 0.8
+                                }}
+                                onMouseOver={(e) => {
+                                  e.currentTarget.style.backgroundColor = headerTextColor === '#000000' ? 'rgba(0, 0, 0, 0.12)' : 'rgba(255, 255, 255, 0.18)';
+                                  e.currentTarget.style.opacity = '1';
+                                }}
+                                onMouseOut={(e) => {
+                                  e.currentTarget.style.backgroundColor = headerTextColor === '#000000' ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.1)';
+                                  e.currentTarget.style.opacity = '0.8';
+                                }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  editTeamName(team.id, team.name);
+                                }}
+                              >
+                                <Pencil size={14} />
+                              </button>
+                            )}
 
                           </span>
                           <div className="card-actions">
-                            {canEditSession(activeSession) && <button className="icon-btn danger" style={{ color: headerTextColor }} onClick={(e) => { e.stopPropagation(); removeTeam(team.id); }}><Trash2 size={18} /></button>}
+                            {canEditSession(activeSession) && (
+                              <button
+                                style={{
+                                  padding: '5px',
+                                  backgroundColor: headerTextColor === '#000000' ? 'rgba(239, 68, 68, 0.12)' : 'rgba(239, 68, 68, 0.2)',
+                                  border: `1px solid ${headerTextColor === '#000000' ? 'rgba(239, 68, 68, 0.25)' : 'rgba(239, 68, 68, 0.35)'}`,
+                                  color: headerTextColor === '#000000' ? '#c53030' : '#ff6b6b',
+                                  borderRadius: '6px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s ease'
+                                }}
+                                onMouseOver={(e) => {
+                                  e.currentTarget.style.backgroundColor = headerTextColor === '#000000' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(239, 68, 68, 0.3)';
+                                  e.currentTarget.style.borderColor = headerTextColor === '#000000' ? 'rgba(239, 68, 68, 0.4)' : 'rgba(239, 68, 68, 0.5)';
+                                }}
+                                onMouseOut={(e) => {
+                                  e.currentTarget.style.backgroundColor = headerTextColor === '#000000' ? 'rgba(239, 68, 68, 0.12)' : 'rgba(239, 68, 68, 0.2)';
+                                  e.currentTarget.style.borderColor = headerTextColor === '#000000' ? 'rgba(239, 68, 68, 0.25)' : 'rgba(239, 68, 68, 0.35)';
+                                }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeTeam(team.id);
+                                }}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
                           </div>
                         </div>
 
@@ -3626,6 +4291,7 @@ function App() {
         </div>
       </main>
 
+      {renderBottomNav()}
       {renderAvatarModal()}
     </div>
   );

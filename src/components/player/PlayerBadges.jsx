@@ -6,36 +6,110 @@ const PlayerBadges = ({ playerName, stats, isPodium = false, monthKey = null }) 
   
   const hasBadges = stats.artilheiroCount > 0 || stats.garcomCount > 0 || stats.mvpCount > 0 || stats.puskasWins > 0 || playerName.trim().toLowerCase() === 'digaum';
 
+  const badgeStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '4px 10px',
+    borderRadius: '20px',
+    fontSize: '11px',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+    fontFamily: "'Outfit', sans-serif",
+    border: '1px solid transparent',
+    transition: 'transform 0.2s'
+  };
+
   if (isPodium) {
     return (
-      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '4px', marginBottom: '8px', maxWidth: '100%', padding: '0 4px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(255,255,255,0.05)', padding: '2px 4px', borderRadius: '4px', fontSize: 10 }} title={"Vitorias: " + (stats.peladasGanhas || 0) + " | Win Rate: " + (stats.winRate || 0) + "%"}>
-          <Trophy size={10} color="#eab308" />
-          <strong style={{ color: '#eab308' }}>{(stats.peladasGanhas || 0)}V ({(stats.winRate || 0)}%)</strong>
+      <div style={{ 
+        display: 'flex', 
+        flexWrap: 'wrap', 
+        justifyContent: 'center', 
+        alignContent: 'flex-start', 
+        gap: '4px', 
+        marginBottom: '4px', 
+        width: '100%', 
+        height: '52px', 
+        overflow: 'hidden',
+        padding: '0 2px' 
+      }}>
+        <div style={{ 
+          ...badgeStyle, 
+          backgroundColor: 'var(--badge-gold-bg)', 
+          color: 'var(--badge-gold)', 
+          borderColor: 'var(--badge-gold-border)',
+          padding: '2px 6px',
+          fontSize: '9px',
+          gap: '3px'
+        }} title={"Vitórias: " + (stats.peladasGanhas || 0) + " | Win Rate: " + (stats.winRate || 0) + "%"}>
+          <Trophy size={10} color="var(--badge-gold)" />
+          <strong>{(stats.peladasGanhas || 0)}V</strong>
         </div>
         {stats.artilheiroCount > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 4px', borderRadius: '4px', fontSize: 10 }} title="Artilheiro">
-            <span>⚽</span><strong style={{ color: 'var(--text-main)' }}>{stats.artilheiroCount}x</strong>
+          <div style={{ 
+            ...badgeStyle, 
+            backgroundColor: 'var(--badge-artilheiro-bg)', 
+            color: 'var(--badge-artilheiro)', 
+            borderColor: 'var(--badge-artilheiro-border)',
+            padding: '2px 6px',
+            fontSize: '9px',
+            gap: '3px'
+          }} title="Artilheiro">
+            <span>⚽</span><strong>{stats.artilheiroCount}x</strong>
           </div>
         )}
         {stats.garcomCount > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 4px', borderRadius: '4px', fontSize: 10 }} title="Garçom">
-            <span>🎯</span><strong style={{ color: 'var(--text-main)' }}>{stats.garcomCount}x</strong>
+          <div style={{ 
+            ...badgeStyle, 
+            backgroundColor: 'var(--badge-garcom-bg)', 
+            color: 'var(--badge-garcom)', 
+            borderColor: 'var(--badge-garcom-border)',
+            padding: '2px 6px',
+            fontSize: '9px',
+            gap: '3px'
+          }} title="Garçom">
+            <span>🎯</span><strong>{stats.garcomCount}x</strong>
           </div>
         )}
         {stats.mvpCount > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(234, 179, 8, 0.2)', padding: '2px 4px', borderRadius: '4px', border: '1px solid rgba(234, 179, 8, 0.3)', fontSize: 10 }} title="MVP">
-            <span>⭐</span><strong style={{ color: '#eab308' }}>{stats.mvpCount}x</strong>
+          <div style={{ 
+            ...badgeStyle, 
+            backgroundColor: 'var(--badge-mvp-bg)', 
+            color: 'var(--badge-mvp)', 
+            borderColor: 'var(--badge-mvp-border)',
+            padding: '2px 6px',
+            fontSize: '9px',
+            gap: '3px'
+          }} title="MVP">
+            <span>⭐</span><strong>{stats.mvpCount}x</strong>
           </div>
         )}
         {stats.puskasWins > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(168, 85, 247, 0.2)', padding: '2px 4px', borderRadius: '4px', border: '1px solid rgba(168, 85, 247, 0.3)', fontSize: 10 }} title="Puskas">
-            <span>👟</span><strong style={{ color: '#a855f7' }}>{stats.puskasWins}x</strong>
+          <div style={{ 
+            ...badgeStyle, 
+            backgroundColor: 'var(--badge-puskas-bg)', 
+            color: 'var(--badge-puskas)', 
+            borderColor: 'var(--badge-puskas-border)',
+            padding: '2px 6px',
+            fontSize: '9px',
+            gap: '3px'
+          }} title="Puskas">
+            <span>👟</span><strong>{stats.puskasWins}x</strong>
           </div>
         )}
         {playerName.trim().toLowerCase() === 'digaum' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', backgroundColor: 'rgba(239, 68, 68, 0.2)', padding: '2px 4px', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.3)', fontSize: 10 }} title="Gol Contra">
-            <span>❌</span><strong style={{ color: '#ef4444' }}>{monthKey === '05/2026' ? '1x' : '2x'}</strong>
+          <div style={{ 
+            ...badgeStyle, 
+            backgroundColor: 'var(--badge-contra-bg)', 
+            color: 'var(--badge-contra)', 
+            borderColor: 'var(--badge-contra-border)',
+            padding: '2px 6px',
+            fontSize: '9px',
+            gap: '3px'
+          }} title="Gol Contra">
+            <span>❌</span><strong>{monthKey === '05/2026' ? '1x' : '2x'}</strong>
           </div>
         )}
       </div>
@@ -43,60 +117,103 @@ const PlayerBadges = ({ playerName, stats, isPodium = false, monthKey = null }) 
   }
 
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: '8px', fontSize: 14, color: 'var(--text-muted)', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-        <Trophy size={16} color="#eab308" />
-        <span>Vitorias: <strong style={{ color: '#eab308' }}>{stats.peladasGanhas || 0}</strong> | Win Rate: <strong style={{ color: '#eab308' }}>{stats.winRate || 0}%</strong></span>
+    <div style={{ 
+      display: 'flex', 
+      flexWrap: 'wrap', 
+      justifyContent: 'center', 
+      alignItems: 'center', 
+      gap: '8px', 
+      borderTop: '1px solid var(--border)', 
+      paddingTop: '12px' 
+    }}>
+      <div style={{ 
+        ...badgeStyle, 
+        backgroundColor: 'var(--badge-gold-bg)', 
+        color: 'var(--badge-gold)', 
+        borderColor: 'var(--badge-gold-border)' 
+      }}>
+        <Trophy size={14} color="var(--badge-gold)" />
+        <span>Vitórias: <strong style={{ color: '#fff' }}>{stats.peladasGanhas || 0}</strong> | Win Rate: <strong style={{ color: '#fff' }}>{stats.winRate || 0}%</strong></span>
       </div>
       
       {stats.cleanSheetsCount > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '4px' }}>
-          <Shield size={16} color="#3b82f6" />
-          <span>Clean Sheets: <strong style={{ color: '#3b82f6' }}>{stats.cleanSheetsCount}</strong></span>
+        <div style={{ 
+          ...badgeStyle, 
+          backgroundColor: 'var(--badge-clean-sheets-bg)', 
+          color: 'var(--badge-clean-sheets)', 
+          borderColor: 'var(--badge-clean-sheets-border)' 
+        }}>
+          <Shield size={14} color="var(--badge-clean-sheets)" />
+          <span>Clean Sheets: <strong style={{ color: '#fff' }}>{stats.cleanSheetsCount}</strong></span>
         </div>
       )}
 
       {hasBadges && (
-        <div style={{ width: '1px', height: '14px', backgroundColor: 'rgba(255,255,255,0.1)', margin: '0 4px' }}></div>
+        <div style={{ width: '1px', height: '14px', backgroundColor: 'var(--border)', margin: '0 4px' }}></div>
       )}
 
       {stats.artilheiroCount > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: '4px' }} title="Artilheiro (Mais gols numa pelada)">
-          <span style={{ fontSize: 14 }}>⚽</span>
-          <span style={{ fontSize: 12, color: 'var(--text-main)' }}>Artilheiro</span>
-          <span style={{ fontWeight: 'bold', color: 'var(--text-main)', fontSize: 12 }}>{stats.artilheiroCount}x</span>
+        <div style={{ 
+          ...badgeStyle, 
+          backgroundColor: 'var(--badge-artilheiro-bg)', 
+          color: 'var(--badge-artilheiro)', 
+          borderColor: 'var(--badge-artilheiro-border)' 
+        }} title="Artilheiro (Mais gols numa pelada)">
+          <span>⚽</span>
+          <span>Artilheiro</span>
+          <strong style={{ color: '#fff' }}>{stats.artilheiroCount}x</strong>
         </div>
       )}
 
       {stats.garcomCount > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: '4px' }} title="Garçom (Mais assistências numa pelada)">
-          <span style={{ fontSize: 14 }}>🎯</span>
-          <span style={{ fontSize: 12, color: 'var(--text-main)' }}>Garçom</span>
-          <span style={{ fontWeight: 'bold', color: 'var(--text-main)', fontSize: 12 }}>{stats.garcomCount}x</span>
+        <div style={{ 
+          ...badgeStyle, 
+          backgroundColor: 'var(--badge-garcom-bg)', 
+          color: 'var(--badge-garcom)', 
+          borderColor: 'var(--badge-garcom-border)' 
+        }} title="Garçom (Mais assistências numa pelada)">
+          <span>🎯</span>
+          <span>Garçom</span>
+          <strong style={{ color: '#fff' }}>{stats.garcomCount}x</strong>
         </div>
       )}
 
       {stats.mvpCount > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(234, 179, 8, 0.2)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(234, 179, 8, 0.3)' }} title="MVP (Maior nota na pelada)">
-          <span style={{ fontSize: 14 }}>⭐</span>
-          <span style={{ fontSize: 12, color: '#eab308' }}>MVP</span>
-          <span style={{ fontWeight: 'bold', color: '#eab308', fontSize: 12 }}>{stats.mvpCount}x</span>
+        <div style={{ 
+          ...badgeStyle, 
+          backgroundColor: 'var(--badge-mvp-bg)', 
+          color: 'var(--badge-mvp)', 
+          borderColor: 'var(--badge-mvp-border)' 
+        }} title="MVP (Maior nota na pelada)">
+          <span>⭐</span>
+          <span>MVP</span>
+          <strong style={{ color: '#fff' }}>{stats.mvpCount}x</strong>
         </div>
       )}
 
       {stats.puskasWins > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(168, 85, 247, 0.2)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(168, 85, 247, 0.3)' }} title="Prêmio Puskas (Melhor Gol)">
-          <span style={{ fontSize: 14 }}>👟</span>
-          <span style={{ fontSize: 12, color: '#a855f7' }}>Puskas</span>
-          <span style={{ fontWeight: 'bold', color: '#a855f7', fontSize: 12 }}>{stats.puskasWins}x</span>
+        <div style={{ 
+          ...badgeStyle, 
+          backgroundColor: 'var(--badge-puskas-bg)', 
+          color: 'var(--badge-puskas)', 
+          borderColor: 'var(--badge-puskas-border)' 
+        }} title="Prêmio Puskas (Melhor Gol)">
+          <span>👟</span>
+          <span>Puskas</span>
+          <strong style={{ color: '#fff' }}>{stats.puskasWins}x</strong>
         </div>
       )}
 
       {playerName.trim().toLowerCase() === 'digaum' && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(239, 68, 68, 0.2)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.3)' }} title="Gol Contra">
-          <span style={{ fontSize: 14 }}>❌</span>
-          <span style={{ fontSize: 12, color: '#ef4444' }}>Gol Contra</span>
-          <span style={{ fontWeight: 'bold', color: '#ef4444', fontSize: 12 }}>{monthKey === '05/2026' ? '1x' : '2x'}</span>
+        <div style={{ 
+          ...badgeStyle, 
+          backgroundColor: 'var(--badge-contra-bg)', 
+          color: 'var(--badge-contra)', 
+          borderColor: 'var(--badge-contra-border)' 
+        }} title="Gol Contra">
+          <span>❌</span>
+          <span>Contra</span>
+          <strong style={{ color: '#fff' }}>{monthKey === '05/2026' ? '1x' : '2x'}</strong>
         </div>
       )}
     </div>

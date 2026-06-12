@@ -414,10 +414,11 @@ export const getMonthlyHighlights = (sessions, registeredPlayers) => {
 
 
 export const getNotaColor = (nota) => {
-  if (nota >= 9) return '#10b981';
-  if (nota >= 8) return '#3b82f6';
-  if (nota >= 7) return '#eab308';
-  if (nota >= 6) return '#f97316';
-  return '#ef4444';
+  if (nota >= 9.0) return '#30d158'; // Verde premium
+  if (nota >= 8.0) return '#0084ff'; // Azul premium
+  if (nota >= 7.0) return '#ffd60a'; // Ouro/Amarelo premium
+  if (nota >= 6.0) return '#ff9f0a'; // Laranja premium
+  return '#ff453a'; // Vermelho premium
 };
+
 

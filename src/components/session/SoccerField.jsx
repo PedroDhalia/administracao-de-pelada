@@ -48,14 +48,14 @@ const SoccerField = ({
 
         if (type === 'Atacante') {
           if (count === 2) {
-            style.transform = 'translateY(-6px)';
+            style.transform = 'translateY(-3px)';
           } else if (count === 3) {
-            if (idx === 1) style.transform = 'translateY(-15px)';
-            else style.transform = 'translateY(10px)';
+            if (idx === 1) style.transform = 'translateY(-8px)';
+            else style.transform = 'translateY(5px)';
           } else if (count === 4) {
-            if (idx === 1 || idx === 2) style.transform = 'translateY(-10px)';
+            if (idx === 1 || idx === 2) style.transform = 'translateY(-5px)';
             else {
-              style.transform = 'translateY(25px)';
+              style.transform = 'translateY(12px)';
               style.margin = '0 10px';
             }
           }
@@ -63,18 +63,18 @@ const SoccerField = ({
           if (count === 2) {
             style.transform = 'translateY(0)';
           } else if (count === 3) {
-            if (idx === 1) style.transform = 'translateY(20px)';
-            else style.transform = 'translateY(-10px)';
+            if (idx === 1) style.transform = 'translateY(10px)';
+            else style.transform = 'translateY(-5px)';
           }
         } else if (type === 'Zagueiro') {
           if (count === 2) {
-            style.transform = 'translateY(6px)';
+            style.transform = 'translateY(3px)';
           } else if (count === 3) {
-            if (idx === 1) style.transform = 'translateY(15px)';
-            else style.transform = 'translateY(-10px)';
+            if (idx === 1) style.transform = 'translateY(8px)';
+            else style.transform = 'translateY(-5px)';
           } else if (count === 4) {
-            if (idx === 1 || idx === 2) style.transform = 'translateY(15px)';
-            else style.transform = 'translateY(-15px)';
+            if (idx === 1 || idx === 2) style.transform = 'translateY(8px)';
+            else style.transform = 'translateY(-8px)';
           }
         }
 
@@ -126,11 +126,11 @@ const SoccerField = ({
                 <div style={{
                   position: 'absolute', top: -2, left: -8,
                   width: 16, height: 16, borderRadius: '50%',
-                  backgroundColor: '#3b82f6', border: '1.5px solid #fff',
+                  backgroundColor: 'var(--gold)', border: '1.5px solid var(--surface-light)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  zIndex: 12, boxShadow: '0 2px 4px rgba(0,0,0,0.4)'
+                  zIndex: 12, boxShadow: '0 2px 6px rgba(0,0,0,0.4)'
                 }}>
-                  <Star size={10} color="#fff" fill="#fff" />
+                  <Star size={10} color="var(--text-dark)" fill="var(--text-dark)" />
                 </div>
               )}
 
@@ -161,9 +161,9 @@ const SoccerField = ({
             <span className="field-player-nota" style={{
               backgroundColor: getNotaColor(nota),
               color: getTextColor(getNotaColor(nota)),
-              boxShadow: (!isHighlights && showMVP && isMVP) ? '0 0 10px rgba(59, 130, 246, 0.6)' : 'none',
+              boxShadow: (!isHighlights && showMVP && isMVP) ? '0 0 10px var(--gold)' : 'none',
               zIndex: 10,
-              fontSize: '10px',
+              fontSize: '10.5px',
               padding: '2px 6px'
             }}>{nota.toFixed(1)}</span>
           </div>

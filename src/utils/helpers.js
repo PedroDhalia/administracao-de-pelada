@@ -41,9 +41,10 @@ export const compressImage = async (file) => {
   });
 };
 export const getNotaColor = (nota) => {
-  if (nota >= 9.0) return '#22c55e'; // Verde
-  if (nota >= 8.0) return '#84cc16'; // Verde lima
-  if (nota >= 7.0) return '#eab308'; // Amarelo
-  if (nota >= 6.0) return '#f97316'; // Laranja
-  return '#ef4444'; // Vermelho
+  if (nota >= 9.0) return '#30d158'; // Verde premium
+  if (nota >= 8.0) return '#0084ff'; // Azul premium
+  if (nota >= 7.0) return '#ffd60a'; // Ouro/Amarelo premium
+  if (nota >= 6.0) return '#ff9f0a'; // Laranja premium
+  return '#ff453a'; // Vermelho premium
 };
+
