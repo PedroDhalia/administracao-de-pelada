@@ -34,6 +34,30 @@ const MonthlyStats = ({
 
   const monthStats = getPlayersStatsForMonth(sessions, registeredPlayers, monthKey);
 
+  const teamOfMonth = (() => {
+    if (!monthStats || monthStats.length === 0) return null;
+    const playersArray = monthStats.map(p => ({
+      ...p,
+      mvpScore: p.media_nota
+    }));
+    const atacantes = playersArray.filter(p => p.posicao === 'Atacante').sort((a, b) => (b.mvpScore || 0) - (a.mvpScore || 0)).slice(0, 2);
+    const meias = playersArray.filter(p => p.posicao === 'Meia').sort((a, b) => (b.mvpScore || 0) - (a.mvpScore || 0)).slice(0, 2);
+    const zagueiros = playersArray.filter(p => p.posicao === 'Zagueiro').sort((a, b) => (b.mvpScore || 0) - (a.mvpScore || 0)).slice(0, 2);
+
+    if (atacantes.length === 0 && meias.length === 0 && zagueiros.length === 0) {
+      const sorted = [...playersArray].sort((a, b) => (b.mvpScore || 0) - (a.mvpScore || 0));
+      return {
+        atacantes: sorted.slice(0, 2),
+        meias: sorted.slice(2, 4),
+        zagueiros: sorted.slice(4, 6)
+      };
+    }
+
+    return { atacantes, meias, zagueiros };
+  })();
+
+  const currentMonthLabel = monthKey ? `${monthNames[monthKey.split('/')[0]] || monthKey.split('/')[0]} ${monthKey.split('/')[1]}` : '';
+
   return (
     <div className="app-container">
       <header className="header" style={{ gap: '16px' }}>
@@ -70,8 +94,59 @@ const MonthlyStats = ({
           ))}
         </div>
 
+        {/* Time do Mês */}
+        {teamOfMonth && (teamOfMonth.atacantes?.length > 0 || teamOfMonth.meias?.length > 0 || teamOfMonth.zagueiros?.length > 0) && (
+          <div className="soccer-field-container animated" style={{ marginBottom: 24 }}>
+            <h4 style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              Time do Mês — {currentMonthLabel}
+            </h4>
+            <div className="soccer-field">
+              <div className="field-line field-center-line"></div>
+              <div className="field-line field-center-circle"></div>
+              <div className="field-line field-penalty-area-top"></div>
+              <div className="field-line field-penalty-area-bottom"></div>
+
+              <SoccerField
+                players={teamOfMonth.atacantes || []}
+                type="Atacante"
+                sourceRatings={[]}
+                isHighlights={true}
+                registeredPlayers={registeredPlayers}
+                registeredGoleiros={registeredGoleiros}
+                onPlayerClick={(pObj) => {
+                  setViewingPlayerId(pObj.id);
+                  setShowProfile(true);
+                }}
+              />
+              <SoccerField
+                players={teamOfMonth.meias || []}
+                type="Meia"
+                sourceRatings={[]}
+                isHighlights={true}
+                registeredPlayers={registeredPlayers}
+                registeredGoleiros={registeredGoleiros}
+                onPlayerClick={(pObj) => {
+                  setViewingPlayerId(pObj.id);
+                  setShowProfile(true);
+                }}
+              />
+              <SoccerField
+                players={teamOfMonth.zagueiros || []}
+                type="Zagueiro"
+                sourceRatings={[]}
+                isHighlights={true}
+                registeredPlayers={registeredPlayers}
+                registeredGoleiros={registeredGoleiros}
+                onPlayerClick={(pObj) => {
+                  setViewingPlayerId(pObj.id);
+                  setShowProfile(true);
+                }}
+              />
+            </div>
+          </div>
+        )}
+
         {/* Similar logic to ranking in App.jsx but filtered by month */}
-        {/* I'll skip the full duplication and use the components */}
         <div className="card animated" style={{ padding: 24, marginBottom: 24 }}>
            <h3 style={{ marginBottom: 16 }}>Ranking do Mês</h3>
            {monthStats.length === 0 ? (

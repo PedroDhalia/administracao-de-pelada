@@ -1888,6 +1888,30 @@ function App() {
       const currentMonthKey = selectedMonthKey || (months.length > 0 ? months[0].key : null);
       const monthlyPlayers = currentMonthKey ? getPlayersStatsForMonth(sessions, registeredPlayers, currentMonthKey) : [];
 
+      // Get current month's highlight team of the month
+      const currentHighlight = allHighlights.find(h => h.monthKey === currentMonthKey);
+      const currentTeamOfMonth = currentHighlight?.teamOfMonth || (() => {
+        if (!monthlyPlayers || monthlyPlayers.length === 0) return null;
+        const playersArray = monthlyPlayers.map(p => ({
+          ...p,
+          mvpScore: p.media_nota
+        }));
+        const atacantes = playersArray.filter(p => p.posicao === 'Atacante').sort((a, b) => (b.mvpScore || 0) - (a.mvpScore || 0)).slice(0, 2);
+        const meias = playersArray.filter(p => p.posicao === 'Meia').sort((a, b) => (b.mvpScore || 0) - (a.mvpScore || 0)).slice(0, 2);
+        const zagueiros = playersArray.filter(p => p.posicao === 'Zagueiro').sort((a, b) => (b.mvpScore || 0) - (a.mvpScore || 0)).slice(0, 2);
+
+        if (atacantes.length === 0 && meias.length === 0 && zagueiros.length === 0) {
+          const sorted = [...playersArray].sort((a, b) => (b.mvpScore || 0) - (a.mvpScore || 0));
+          return {
+            atacantes: sorted.slice(0, 2),
+            meias: sorted.slice(2, 4),
+            zagueiros: sorted.slice(4, 6)
+          };
+        }
+
+        return { atacantes, meias, zagueiros };
+      })();
+
       // Get previous month stats for comparison
       const currentIdx = months.findIndex(m => m.key === currentMonthKey);
       const prevMonthKey = (currentIdx !== -1 && currentIdx < months.length - 1) ? months[currentIdx + 1].key : null;
@@ -1939,6 +1963,60 @@ function App() {
               </div>
             ) : (
               <>
+                {/* Time do Mês */}
+                {currentTeamOfMonth && (currentTeamOfMonth.atacantes?.length > 0 || currentTeamOfMonth.meias?.length > 0 || currentTeamOfMonth.zagueiros?.length > 0) && (
+                  <div className="soccer-field-container animated" style={{ marginBottom: 24 }}>
+                    <h4 style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                      Time do Mês — {currentHighlight?.label || (currentMonthKey ? `${monthNames[currentMonthKey.split('/')[0]] || currentMonthKey.split('/')[0]} ${currentMonthKey.split('/')[1]}` : '')}
+                    </h4>
+                    <div className="soccer-field">
+                      <div className="field-line field-center-line"></div>
+                      <div className="field-line field-center-circle"></div>
+                      <div className="field-line field-penalty-area-top"></div>
+                      <div className="field-line field-penalty-area-bottom"></div>
+
+                      <SoccerField
+                        users={users}
+                        players={currentTeamOfMonth.atacantes || []}
+                        type="Atacante"
+                        sourceRatings={[]}
+                        isHighlights={true}
+                        registeredPlayers={registeredPlayers}
+                        registeredGoleiros={registeredGoleiros}
+                        onPlayerClick={(pObj) => {
+                          setViewingPlayerId(pObj.id);
+                          setShowProfile(true);
+                        }}
+                      />
+                      <SoccerField
+                        users={users}
+                        players={currentTeamOfMonth.meias || []}
+                        type="Meia"
+                        sourceRatings={[]}
+                        isHighlights={true}
+                        registeredPlayers={registeredPlayers}
+                        registeredGoleiros={registeredGoleiros}
+                        onPlayerClick={(pObj) => {
+                          setViewingPlayerId(pObj.id);
+                          setShowProfile(true);
+                        }}
+                      />
+                      <SoccerField
+                        users={users}
+                        players={currentTeamOfMonth.zagueiros || []}
+                        type="Zagueiro"
+                        sourceRatings={[]}
+                        isHighlights={true}
+                        registeredPlayers={registeredPlayers}
+                        registeredGoleiros={registeredGoleiros}
+                        onPlayerClick={(pObj) => {
+                          setViewingPlayerId(pObj.id);
+                          setShowProfile(true);
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
                 <input
                   type="text"
                   className="input-field"
