@@ -60,13 +60,8 @@ export const useDatabase = () => {
   }, []);
 
   const updateSessionsAndStats = (newSessionsList, currentPlayers = registeredPlayers, currentGoleiros = registeredGoleiros) => {
-    set(ref(db, 'sessions'), newSessionsList);
-
-    const statsByName = {};
-    const statsGoleiroByName = {};
-
+    // 1. Automatically calculate team stats from matches for sessions that have matches registered in memory first
     newSessionsList.forEach(session => {
-      // Automatically calculate team stats from matches for sessions that have matches registered
       if (session.matches) {
         (session.teams || []).forEach(t => {
           let wins = 0, draws = 0, losses = 0;
@@ -86,7 +81,15 @@ export const useDatabase = () => {
           t.losses = losses;
         });
       }
+    });
 
+    // 2. Write the fully updated sessions list to database
+    set(ref(db, 'sessions'), newSessionsList);
+
+    const statsByName = {};
+    const statsGoleiroByName = {};
+
+    newSessionsList.forEach(session => {
       const teams = session.teams || [];
       if (teams.length === 0) return;
 
@@ -95,13 +98,14 @@ export const useDatabase = () => {
         points: (t.wins || 0) * 3 + (t.draws || 0) * 1
       })).sort((a, b) => b.points - a.points || (b.wins || 0) - (a.wins || 0));
 
-      let championTeamId = null;
-      if (teamsWithPoints.length > 0 && teamsWithPoints[0].points > 0) {
-        championTeamId = teamsWithPoints[0].id;
-      }
+      const maxPoints = teamsWithPoints.length > 0 ? teamsWithPoints[0].points : 0;
+      const maxWins = teamsWithPoints.length > 0 && teamsWithPoints[0].points === maxPoints ? (teamsWithPoints[0].wins || 0) : 0;
+      const championTeamIds = teamsWithPoints
+        .filter(t => t.points === maxPoints && (t.wins || 0) === maxWins && maxPoints > 0)
+        .map(t => t.id);
 
       teams.forEach(team => {
-        const isWinner = team.id === championTeamId;
+        const isWinner = championTeamIds.includes(team.id);
         const players = team.players || [];
         players.forEach(p => {
           const normName = p.name.trim().toLowerCase();
@@ -155,7 +159,9 @@ export const useDatabase = () => {
 
         if (sessionMaxGoals > 0 && (r.goals || 0) === sessionMaxGoals) statsByName[normName].artilheiroCount += 1;
         if (sessionMaxAssists > 0 && (r.assists || 0) === sessionMaxAssists) statsByName[normName].garcomCount += 1;
-        if (!isInitialState && r.nota === maxNota && maxNota > 0) statsByName[normName].mvpCount += 1;
+
+        const isSoleMVP = ratings.length > 0 && ratings[0].name.trim().toLowerCase() === normName;
+        if (!isInitialState && isSoleMVP && maxNota > 0) statsByName[normName].mvpCount += 1;
       });
 
       const goleiros = session.goleiros || [];

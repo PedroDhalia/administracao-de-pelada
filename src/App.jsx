@@ -22,7 +22,12 @@ import {
   getMonthlyHighlights,
   getPlayerStatsForMonth,
   getPlayerStats,
-  getPlayersStatsForMonth
+  getPlayersStatsForMonth,
+  getSeasonInfo,
+  getAvailableSeasons,
+  filterSessionsBySeason,
+  getPlayersStatsForSeason,
+  getFullPlayersStatsForSeason
 } from './utils/calculations';
 import { getTextColor, getNotaColor, compressImage } from './utils/helpers';
 
@@ -61,6 +66,10 @@ function App() {
   const [showAllHighlightsScreen, setShowAllHighlightsScreen] = useState(false);
   const [showMonthlyStatsScreen, setShowMonthlyStatsScreen] = useState(false);
   const [selectedMonthKey, setSelectedMonthKey] = useState(null);
+  const [selectedSeasonKey, setSelectedSeasonKey] = useState(null);
+
+  const availableSeasons = useMemo(() => getAvailableSeasons(sessions), [sessions]);
+  const activeSeasonKey = selectedSeasonKey || availableSeasons[0]?.key || 'all';
   const [monthlyPlayerSearchQuery, setMonthlyPlayerSearchQuery] = useState('');
   const [monthlyPlayerSortConfig, setMonthlyPlayerSortConfig] = useState('media');
   const [newSessionName, setNewSessionName] = useState('');
@@ -1050,7 +1059,7 @@ function App() {
                 <div className="admin-user-actions">
                   <button className="admin-action-btn admin-action-primary" onClick={() => handleChangePassword(u.id)}><Key size={13} /> Trocar Senha</button>
                   {!u.is_admin && <button className="admin-action-btn admin-action-promote" onClick={() => promoteToGlobalAdmin(u.id)}><Shield size={13} /> Promover</button>}
-                  {u.is_admin && u.id !== currentUser.id && (currentUser?.id === users[0]?.id || (currentUser?.name && currentUser.name.toLowerCase().includes('pedro dhalia'))) && <button className="admin-action-btn" style={{backgroundColor: 'transparent', border: '1px solid rgba(239, 68, 68, 0.5)', color: 'var(--danger)'}} onClick={() => demoteFromGlobalAdmin(u.id)}><Shield size={13} /> Rebaixar</button>}
+                  {u.is_admin && u.id !== currentUser.id && (currentUser?.id === users[0]?.id || (currentUser?.name && currentUser.name.toLowerCase().includes('pedro dhalia'))) && <button className="admin-action-btn" style={{ backgroundColor: 'transparent', border: '1px solid rgba(239, 68, 68, 0.5)', color: 'var(--danger)' }} onClick={() => demoteFromGlobalAdmin(u.id)}><Shield size={13} /> Rebaixar</button>}
                   {u.id !== currentUser.id && <button className="admin-action-btn admin-action-danger" onClick={() => deleteUser(u.id)}><Trash2 size={13} /> Excluir</button>}
                 </div>
               </div>
@@ -1149,8 +1158,8 @@ function App() {
             setShowPlayersScreen(true);
             setShowMonthlyStatsScreen(false);
           }}>
-            <span className="menu-compact-icon" style={{ fontSize: '24px' }}>📊</span>
-            <span>Ranking Geral</span>
+            <span className="menu-compact-icon" style={{ fontSize: '24px' }}>🏆</span>
+            <span>Ranking por Temporada</span>
           </button>
 
           <button className="menu-compact-btn" onClick={() => {
@@ -1671,10 +1680,10 @@ function App() {
                             {totalDiff > 0 && <TrendingUp size={14} />}
                             {totalDiff < 0 && <TrendingDown size={14} />}
                             <span>
-                              {totalDiff > 0 
-                                ? `Subiu ${totalDiff.toFixed(1)} pts em relação ao mês passado` 
-                                : totalDiff < 0 
-                                  ? `Caiu ${Math.abs(totalDiff).toFixed(1)} pts em relação ao mês passado` 
+                              {totalDiff > 0
+                                ? `Subiu ${totalDiff.toFixed(1)} pts em relação ao mês passado`
+                                : totalDiff < 0
+                                  ? `Caiu ${Math.abs(totalDiff).toFixed(1)} pts em relação ao mês passado`
                                   : 'Sem alteração em relação ao mês passado'}
                             </span>
                           </div>
@@ -2284,18 +2293,69 @@ function App() {
     }
 
     if (showPlayersScreen) {
+      const activeSeasonSessions = filterSessionsBySeason(sessions, activeSeasonKey);
+      const seasonPlayers = getFullPlayersStatsForSeason(sessions, registeredPlayers, activeSeasonKey);
+      const currentSeasonObj = availableSeasons.find(s => s.key === activeSeasonKey) || availableSeasons[0];
+
       return (
         <div className="app-container">
           <header className="header" style={{ gap: '16px' }}>
             <button className="back-btn" onClick={() => setShowPlayersScreen(false)}>
               <ChevronLeft size={28} />
             </button>
-            <h1>Estatísticas Gerais dos Jogadores</h1>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <h1 style={{ margin: 0, fontSize: '20px' }}>Ranking por Temporadas</h1>
+              {currentSeasonObj && (
+                <span style={{ fontSize: 12, color: 'var(--primary)', fontWeight: '600' }}>
+                  {currentSeasonObj.label} {currentSeasonObj.period ? `(${currentSeasonObj.period})` : ''}
+                </span>
+              )}
+            </div>
           </header>
 
           <main className="main-content animated">
+            {/* Season Selector Pills */}
+            <div style={{
+              display: 'flex',
+              gap: '10px',
+              overflowX: 'auto',
+              paddingBottom: '12px',
+              marginBottom: '16px',
+              scrollbarWidth: 'none',
+              WebkitOverflowScrolling: 'touch'
+            }}>
+              {availableSeasons.map(s => {
+                const isActive = activeSeasonKey === s.key;
+                return (
+                  <button
+                    key={s.key}
+                    onClick={() => setSelectedSeasonKey(s.key)}
+                    style={{
+                      padding: '10px 18px',
+                      borderRadius: '12px',
+                      whiteSpace: 'nowrap',
+                      backgroundColor: isActive ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
+                      color: isActive ? '#fff' : 'var(--text-muted)',
+                      border: isActive ? '1.5px solid var(--primary)' : '1px solid rgba(255,255,255,0.1)',
+                      fontSize: 13,
+                      fontWeight: '700',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '2px',
+                      boxShadow: isActive ? '0 0 12px rgba(34,197,94,0.3)' : 'none'
+                    }}
+                  >
+                    <span>{s.label}</span>
+                    <span style={{ fontSize: 10, opacity: isActive ? 0.9 : 0.6, fontWeight: 'normal' }}>{s.period}</span>
+                  </button>
+                );
+              })}
+            </div>
 
-            {registeredPlayers.length === 0 ? (
+            {seasonPlayers.length === 0 ? (
               <div className="empty-state">
                 <Users size={48} />
                 <p>Nenhum jogador cadastrado.<br />Adicione acima para poder escalar nos times.</p>
@@ -2347,7 +2407,7 @@ function App() {
 
                 <div className="player-list" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {(() => {
-                    const filteredAndSortedPlayers = registeredPlayers
+                    const filteredAndSortedPlayers = seasonPlayers
                       .filter(p => p.name.toLowerCase().includes(playerSearchQuery.toLowerCase()))
                       .slice()
                       .sort((a, b) => {
@@ -2357,10 +2417,8 @@ function App() {
                         if (playerSortConfig === 'media') return (b.media_nota || 0) - (a.media_nota || 0) || a.name.localeCompare(b.name);
                         if (playerSortConfig === 'ga') return ((b.total_gols || 0) + (b.total_assistencias || 0)) - ((a.total_gols || 0) + (a.total_assistencias || 0)) || (b.media_nota || 0) - (a.media_nota || 0) || a.name.localeCompare(b.name);
                         if (playerSortConfig === 'media_ga') {
-                          const statsA = getPlayerStats(a.name, sessions, registeredPlayers, registeredGoleiros);
-                          const statsB = getPlayerStats(b.name, sessions, registeredPlayers, registeredGoleiros);
-                          const avgA = statsA.peladasJogadas > 0 ? (statsA.totalGoals + statsA.totalAssists) / statsA.peladasJogadas : 0;
-                          const avgB = statsB.peladasJogadas > 0 ? (statsB.totalGoals + statsB.totalAssists) / statsB.peladasJogadas : 0;
+                          const avgA = a.matchesForNota > 0 ? (a.total_gols + a.total_assistencias) / a.matchesForNota : 0;
+                          const avgB = b.matchesForNota > 0 ? (b.total_gols + b.total_assistencias) / b.matchesForNota : 0;
                           return avgB - avgA || (b.media_nota || 0) - (a.media_nota || 0) || a.name.localeCompare(b.name);
                         }
                         return a.name.localeCompare(b.name);
@@ -2381,8 +2439,7 @@ function App() {
                       if (playerSortConfig === 'media') maxStatValue = 10;
                       if (playerSortConfig === 'ga') maxStatValue = ((topP.total_gols || 0) + (topP.total_assistencias || 0)) || 1;
                       if (playerSortConfig === 'media_ga') {
-                        const topStats = getPlayerStats(topP.name, sessions, registeredPlayers, registeredGoleiros);
-                        maxStatValue = topStats.peladasJogadas > 0 ? (topStats.totalGoals + topStats.totalAssists) / topStats.peladasJogadas : 1;
+                        maxStatValue = topP.matchesForNota > 0 ? (topP.total_gols + topP.total_assistencias) / topP.matchesForNota : 1;
                       }
                     }
 
@@ -2401,15 +2458,14 @@ function App() {
                       if (playerSortConfig === 'media') return <span style={{ color: 'var(--primary)' }}>⭐ {p.media_nota?.toFixed(2) || '0.00'}</span>;
                       if (playerSortConfig === 'ga') return <span style={{ color: 'var(--primary)' }}>🔥 {(p.total_gols || 0) + (p.total_assistencias || 0)}</span>;
                       if (playerSortConfig === 'media_ga') {
-                        const pStats = getPlayerStats(p.name, sessions, registeredPlayers, registeredGoleiros);
-                        const avg = pStats.peladasJogadas > 0 ? ((pStats.totalGoals + pStats.totalAssists) / pStats.peladasJogadas).toFixed(2) : '0.00';
+                        const avg = p.matchesForNota > 0 ? ((p.total_gols + p.total_assistencias) / p.matchesForNota).toFixed(2) : '0.00';
                         return <span style={{ color: 'var(--primary)' }}>📊 {avg}</span>;
                       }
                       return '';
                     };
 
                     const renderPlayerCard = (p) => {
-                      const stats = getPlayerStats(p.name, sessions, registeredPlayers, registeredGoleiros);
+                      const stats = getPlayerStats(p.name, activeSeasonSessions, registeredPlayers, registeredGoleiros);
                       let currentStatValue = 0;
                       if (playerSortConfig === 'gols') currentStatValue = p.total_gols || 0;
                       if (playerSortConfig === 'assistencias') currentStatValue = p.total_assistencias || 0;
@@ -2417,8 +2473,7 @@ function App() {
                       if (playerSortConfig === 'media') currentStatValue = p.media_nota || 0;
                       if (playerSortConfig === 'ga') currentStatValue = (p.total_gols || 0) + (p.total_assistencias || 0);
                       if (playerSortConfig === 'media_ga') {
-                        const pStats = getPlayerStats(p.name, sessions, registeredPlayers, registeredGoleiros);
-                        currentStatValue = pStats.peladasJogadas > 0 ? (pStats.totalGoals + pStats.totalAssists) / pStats.peladasJogadas : 0;
+                        currentStatValue = p.matchesForNota > 0 ? (p.total_gols + p.total_assistencias) / p.matchesForNota : 0;
                       }
 
                       const barPercentage = Math.min(100, Math.max(0, (currentStatValue / maxStatValue) * 100));
@@ -2496,10 +2551,10 @@ function App() {
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                               <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>Nota</span>
                               <span style={{ fontWeight: 'bold', color: '#eab308', fontSize: 16 }}>{p.media_nota?.toFixed(2) || '0.00'}</span>
-                              <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>Média Geral</span>
+                              <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>Média</span>
                             </div>
                           </div>
-                          <PlayerBadges playerName={p.name} stats={getPlayerStats(p.name, sessions, registeredPlayers, registeredGoleiros)} isPodium={false} />
+                          <PlayerBadges playerName={p.name} stats={stats} isPodium={false} />
 
                           {expandedPlayerStats[p.id] && stats.matchHistory?.length > 0 && (
                             <div className="match-history animated" style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '12px', cursor: 'default' }} onClick={(e) => e.stopPropagation()}>
@@ -2541,7 +2596,7 @@ function App() {
                                   <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)', transition: 'color 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.color = 'var(--primary)'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-main)'}>{podiumPlayers[1].name}</div>
                                 </div>
                                 <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[1])}</div>
-                                <PlayerBadges playerName={podiumPlayers[1].name} stats={getPlayerStats(podiumPlayers[1].name, sessions, registeredPlayers, registeredGoleiros)} isPodium={true} />
+                                <PlayerBadges playerName={podiumPlayers[1].name} stats={getPlayerStats(podiumPlayers[1].name, activeSeasonSessions, registeredPlayers, registeredGoleiros)} isPodium={true} />
                                 {isGlobalAdmin && (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
                                     <select
@@ -2577,7 +2632,7 @@ function App() {
                                   <div style={{ marginTop: '8px', fontSize: '15px', fontWeight: 'bold', textAlign: 'center', color: '#eab308', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', transition: 'filter 0.2s ease' }} onMouseOver={(e) => e.currentTarget.style.filter = 'brightness(1.2)'} onMouseOut={(e) => e.currentTarget.style.filter = 'none'}>{podiumPlayers[0].name}</div>
                                 </div>
                                 <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[0])}</div>
-                                <PlayerBadges playerName={podiumPlayers[0].name} stats={getPlayerStats(podiumPlayers[0].name, sessions, registeredPlayers, registeredGoleiros)} isPodium={true} />
+                                <PlayerBadges playerName={podiumPlayers[0].name} stats={getPlayerStats(podiumPlayers[0].name, activeSeasonSessions, registeredPlayers, registeredGoleiros)} isPodium={true} />
                                 {isGlobalAdmin && (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
                                     <select
@@ -2612,7 +2667,7 @@ function App() {
                                   <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', color: 'var(--text-main)' }}>{podiumPlayers[2].name}</div>
                                 </div>
                                 <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>{getStatValue(podiumPlayers[2])}</div>
-                                <PlayerBadges playerName={podiumPlayers[2].name} stats={getPlayerStats(podiumPlayers[2].name, sessions, registeredPlayers, registeredGoleiros)} isPodium={true} />
+                                <PlayerBadges playerName={podiumPlayers[2].name} stats={getPlayerStats(podiumPlayers[2].name, activeSeasonSessions, registeredPlayers, registeredGoleiros)} isPodium={true} />
                                 {isGlobalAdmin && (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%', alignItems: 'center', marginBottom: '8px' }}>
                                     <select
@@ -2947,12 +3002,26 @@ function App() {
                       <div className="admin-user-actions">
                         <button className="admin-action-btn admin-action-primary" onClick={() => handleChangePassword(u.id)}><Key size={13} /> Trocar Senha</button>
                         {!u.is_admin && <button className="admin-action-btn admin-action-promote" onClick={() => promoteToGlobalAdmin(u.id)}><Shield size={13} /> Promover</button>}
-                        {u.is_admin && u.id !== currentUser.id && (currentUser?.id === users[0]?.id || (currentUser?.name && currentUser.name.toLowerCase().includes('pedro dhalia'))) && <button className="admin-action-btn" style={{backgroundColor: 'transparent', border: '1px solid rgba(239, 68, 68, 0.5)', color: 'var(--danger)'}} onClick={() => demoteFromGlobalAdmin(u.id)}><Shield size={13} /> Rebaixar</button>}
+                        {u.is_admin && u.id !== currentUser.id && (currentUser?.id === users[0]?.id || (currentUser?.name && currentUser.name.toLowerCase().includes('pedro dhalia'))) && <button className="admin-action-btn" style={{ backgroundColor: 'transparent', border: '1px solid rgba(239, 68, 68, 0.5)', color: 'var(--danger)' }} onClick={() => demoteFromGlobalAdmin(u.id)}><Shield size={13} /> Rebaixar</button>}
                         {u.id !== currentUser.id && <button className="admin-action-btn admin-action-danger" onClick={() => deleteUser(u.id)}><Trash2 size={13} /> Excluir</button>}
                       </div>
                     </div>
                   );
                 })}
+              </div>
+              <div className="admin-actions-footer" style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => {
+                    if (confirm("Tem certeza que deseja recalcular todas as estatísticas e badges de todas as peladas no banco de dados Firebase? Isso processará todo o histórico.")) {
+                      updateSessionsAndStats(sessions, registeredPlayers, registeredGoleiros);
+                      alert("Estatísticas recalculadas e salvas com sucesso!");
+                    }
+                  }}
+                  className="btn-primary"
+                  style={{ backgroundColor: 'var(--primary)', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', fontSize: '13px', borderRadius: '8px' }}
+                >
+                  <Database size={16} /> Recalcular Estatísticas do Banco
+                </button>
               </div>
 
             </div>
