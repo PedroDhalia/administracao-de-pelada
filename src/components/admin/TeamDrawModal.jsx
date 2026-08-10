@@ -63,34 +63,18 @@ export default function TeamDrawModal({
   const drawCount = drawHistory.length;
   const latestDraw = drawHistory.length > 0 ? drawHistory[drawHistory.length - 1] : null;
 
-  // Auto fill top 20 registered players sorted by media_nota or name
-  const handleAutoFill = () => {
-    const sorted = [...registeredPlayers].sort((a, b) => (b.media_nota || 0) - (a.media_nota || 0));
-    const names = sorted.map(p => p.name);
-
-    setMatrix({
-      stars5: [names[0] || '', names[1] || '', names[2] || '', names[3] || ''],
-      stars4: [names[4] || '', names[5] || '', names[6] || '', names[7] || ''],
-      stars3: [names[8] || '', names[9] || '', names[10] || '', names[11] || ''],
-      stars2: [names[12] || '', names[13] || '', names[14] || '', names[15] || ''],
-      stars1: [names[16] || '', names[17] || '', names[18] || '', names[19] || '']
-    });
-  };
-
   const handleSlotChange = (starKey, index, value) => {
     setMatrix(prev => {
       const updatedList = [...prev[starKey]];
       updatedList[index] = value;
-      return { ...prev, [starKey]: updatedList };
-    });
-  };
+      const newMatrix = { ...prev, [starKey]: updatedList };
 
-  const handleSaveMatrix = () => {
-    if (saveStarRatings) {
-      saveStarRatings(matrix);
-      setSaveSuccessMsg('Estrelas salvas com sucesso no banco de dados!');
-      setTimeout(() => setSaveSuccessMsg(''), 3000);
-    }
+      if (saveStarRatings) {
+        saveStarRatings(newMatrix);
+      }
+
+      return newMatrix;
+    });
   };
 
   // Calculate individual player score: Star Base (50..10) + Sub-Level Bonus (10..2.5)
@@ -558,28 +542,8 @@ export default function TeamDrawModal({
                 <div className="matrix-header-title">
                   <h3 style={{ fontSize: 16, fontWeight: 700 }}>Matriz de Estrelas (20 Jogadores)</h3>
                   <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    Defina os 20 mensalistas/diaristas divididos em 5 níveis de estrelas e 4 posições (do melhor pro pior).
+                    Defina os 20 mensalistas/diaristas divididos em 5 níveis de estrelas e 4 posições (do melhor pro pior). As alterações são salvas automaticamente.
                   </p>
-                </div>
-
-                <div className="matrix-header-actions">
-                  <button
-                    onClick={handleAutoFill}
-                    className="btn-matrix-autofill"
-                    title="Preencher com os jogadores mais bem pontuados do ranking"
-                  >
-                    <Sparkles size={14} />
-                    <span className="btn-label-full">Auto-Preencher (Ranking)</span>
-                    <span className="btn-label-short">Auto-Preencher</span>
-                  </button>
-                  <button
-                    onClick={handleSaveMatrix}
-                    className="btn-matrix-save"
-                  >
-                    <Save size={14} />
-                    <span className="btn-label-full">Salvar Matriz</span>
-                    <span className="btn-label-short">Salvar</span>
-                  </button>
                 </div>
               </div>
 
