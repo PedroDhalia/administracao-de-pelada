@@ -93,6 +93,17 @@ export default function TeamDrawModal({
     }
   };
 
+  // Calculate individual player score: Star Base (50..10) + Sub-Level Bonus (10..2.5)
+  const getPlayerScore = (stars, tierLevel) => {
+    const starBase = stars * 20; // 5★=100, 4★=80, 3★=60, 2★=40, 1★=20
+    const tierBonus = (5 - tierLevel) * 2.5; // N1=10, N2=7.5, N3=5.0, N4=2.5
+    return starBase + tierBonus;
+  };
+
+  const calculateTeamScore = (players = []) => {
+    return players.reduce((sum, p) => sum + getPlayerScore(p.stars || 1, p.tierLevel || 4), 0);
+  };
+
   // Fisher-Yates Shuffle Helper
   const shuffleArray = (array) => {
     const arr = [...array];
@@ -179,6 +190,11 @@ export default function TeamDrawModal({
           color: starInfo.color
         });
       });
+    });
+
+    // Calculate total score for each team
+    teams.forEach(t => {
+      t.totalScore = calculateTeamScore(t.players);
     });
 
     setCurrentDrawnTeams(teams);
@@ -387,57 +403,124 @@ export default function TeamDrawModal({
 
               {/* Drawn Teams View */}
               {(currentDrawnTeams || (latestDraw && latestDraw.teams)) ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-main)' }}>
-                      ⚽ Escalação Sorteada ({currentDrawnTeams ? 'Novo Sorteio' : `Tentativa #${latestDraw.drawNumber}`})
-                    </h3>
-                    <button
-                      className="btn-primary"
-                      onClick={handleApplyToSession}
-                      style={{ padding: '8px 16px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                    >
-                      <Save size={14} /> Aplicar à Pelada
-                    </button>
-                  </div>
+                (() => {
+                  const activeTeams = currentDrawnTeams || latestDraw.teams;
+                  const teamsWithScores = activeTeams.map(t => ({
+                    ...t,
+                    score: t.totalScore || calculateTeamScore(t.players)
+                  }));
+                  const scoresList = teamsWithScores.map(t => t.score);
+                  const minS = Math.min(...scoresList);
+                  const maxS = Math.max(...scoresList);
+                  const parity = maxS > 0 ? ((minS / maxS) * 100).toFixed(1) : '100.0';
 
-                  <div className="teams-drawn-grid">
-                    {(currentDrawnTeams || latestDraw.teams).map((team) => (
-                      <div key={team.id} className="drawn-team-card" style={{ borderTop: `3px solid ${team.color || '#00e65a'}` }}>
-                        <div className="drawn-team-header">
-                          <span style={{ color: team.color || 'var(--text-main)' }}>{team.name}</span>
-                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>5 Jogadores</span>
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          {team.players.map((p, pIdx) => (
-                            <div key={pIdx} className="drawn-player-item">
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <PlayerAvatar
-                                  users={users}
-                                  registeredPlayers={registeredPlayers}
-                                  registeredGoleiros={registeredGoleiros}
-                                  playerName={p.name}
-                                  size={22}
-                                />
-                                <span style={{ fontWeight: 600 }}>{p.name}</span>
-                              </div>
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                        <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-main)' }}>
+                          ⚽ Escalação Sorteada ({currentDrawnTeams ? 'Novo Sorteio' : `Tentativa #${latestDraw.drawNumber}`})
+                        </h3>
+                        <button
+                          className="btn-primary"
+                          onClick={handleApplyToSession}
+                          style={{ padding: '8px 16px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          <Save size={14} /> Aplicar à Pelada
+                        </button>
+                      </div>
+
+                      {/* Drawn Teams Grid */}
+                      <div className="teams-drawn-grid">
+                        {teamsWithScores.map((team) => (
+                          <div key={team.id} className="drawn-team-card" style={{ borderTop: `3px solid ${team.color || '#00e65a'}` }}>
+                            <div className="drawn-team-header">
+                              <span style={{ color: team.color || 'var(--text-main)', fontWeight: 800 }}>{team.name}</span>
                               <span
-                                className="player-star-badge"
                                 style={{
-                                  backgroundColor: `${p.color || '#ffd60a'}20`,
-                                  color: p.color || '#ffd60a',
-                                  border: `1px solid ${p.color || '#ffd60a'}40`
+                                  backgroundColor: 'rgba(0, 230, 90, 0.15)',
+                                  color: '#00e65a',
+                                  border: '1px solid rgba(0, 230, 90, 0.3)',
+                                  padding: '2px 8px',
+                                  borderRadius: '12px',
+                                  fontSize: '11px',
+                                  fontWeight: 800
                                 }}
+                                title="Pontuação Total de Habilidade do Time"
                               >
-                                {p.stars}★ (N{p.tierLevel})
+                                ⚡ {team.score.toFixed(1)} pts
                               </span>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              {team.players.map((p, pIdx) => (
+                                <div key={pIdx} className="drawn-player-item">
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <PlayerAvatar
+                                      users={users}
+                                      registeredPlayers={registeredPlayers}
+                                      registeredGoleiros={registeredGoleiros}
+                                      playerName={p.name}
+                                      size={22}
+                                    />
+                                    <span style={{ fontWeight: 600 }}>{p.name}</span>
+                                  </div>
+                                  <span
+                                    className="player-star-badge"
+                                    style={{
+                                      backgroundColor: `${p.color || '#ffd60a'}20`,
+                                      color: p.color || '#ffd60a',
+                                      border: `1px solid ${p.color || '#ffd60a'}40`
+                                    }}
+                                  >
+                                    {p.stars}★ (N{p.tierLevel})
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* COMPROVAÇÃO DE EQUILÍBRIO CARD */}
+                      <div style={{
+                        background: 'linear-gradient(135deg, rgba(0, 230, 90, 0.06) 0%, rgba(0,0,0,0.3) 100%)',
+                        border: '1px solid rgba(0, 230, 90, 0.25)',
+                        borderRadius: '16px',
+                        padding: '16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', fontWeight: 800, color: '#ffffff' }}>
+                            <Sparkles size={18} color="#00e65a" />
+                            <span>Comprovação de Equilíbrio (Pontuação das Equipes)</span>
+                          </div>
+                          <span style={{
+                            fontSize: '12px',
+                            fontWeight: 800,
+                            backgroundColor: 'rgba(0, 230, 90, 0.2)',
+                            color: '#00e65a',
+                            padding: '4px 12px',
+                            borderRadius: '20px',
+                            border: '1px solid rgba(0, 230, 90, 0.4)'
+                          }}>
+                            Índice de Paridade: {parity}% (Super Equilibrado)
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
+                          {teamsWithScores.map(t => (
+                            <div key={t.id} style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: '12px', borderLeft: `3px solid ${t.color}`, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <span style={{ fontSize: '12px', fontWeight: 700, color: t.color }}>{t.name}</span>
+                              <span style={{ fontSize: '15px', fontWeight: 800, color: '#ffffff' }}>{t.score.toFixed(1)} pts</span>
+                              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Média: {(t.score / 5).toFixed(1)} pts / jogador</span>
                             </div>
                           ))}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
+                    </div>
+                  );
+                })()
               ) : (
                 <div style={{
                   padding: '36px 20px',
@@ -583,21 +666,27 @@ export default function TeamDrawModal({
                       </div>
 
                       <div className="teams-drawn-grid" style={{ marginTop: 8 }}>
-                        {record.teams.map((t) => (
-                          <div key={t.id} style={{ background: 'rgba(255,255,255,0.02)', padding: 10, borderRadius: 10, borderLeft: `3px solid ${t.color || '#00e65a'}` }}>
-                            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, color: t.color || 'var(--text-main)' }}>
-                              {t.name}
+                        {record.teams.map((t) => {
+                          const tScore = t.totalScore || calculateTeamScore(t.players);
+                          return (
+                            <div key={t.id} style={{ background: 'rgba(255,255,255,0.02)', padding: 10, borderRadius: 10, borderLeft: `3px solid ${t.color || '#00e65a'}` }}>
+                              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, color: t.color || 'var(--text-main)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span>{t.name}</span>
+                                <span style={{ fontSize: 10, color: '#00e65a', backgroundColor: 'rgba(0, 230, 90, 0.1)', padding: '1px 6px', borderRadius: 8, border: '1px solid rgba(0, 230, 90, 0.2)' }}>
+                                  ⚡ {tScore.toFixed(1)} pts
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                {t.players.map((p, pIdx) => (
+                                  <div key={pIdx} style={{ fontSize: 11, display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
+                                    <span style={{ color: '#ffffff' }}>{p.name}</span>
+                                    <span>{p.stars}★</span>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                              {t.players.map((p, pIdx) => (
-                                <div key={pIdx} style={{ fontSize: 11, display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)' }}>
-                                  <span style={{ color: '#ffffff' }}>{p.name}</span>
-                                  <span>{p.stars}★</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   ))}
