@@ -72,19 +72,25 @@
 
 /* Tabs Navigation */
 .draw-tabs {
-  display: flex;
-  padding: 8px 16px;
-  gap: 8px;
-  background: rgba(0, 0, 0, 0.25);
-  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.06));
-  overflow-x: auto;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  width: 100%;
+  padding: 8px;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+  align-items: center;
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 
 .draw-tab-btn {
   display: flex;
+  flex-direction: row;
   align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 8px;
   border-radius: 12px;
   border: 1px solid transparent;
   background: transparent;
@@ -93,7 +99,14 @@
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
   transition: all 0.2s ease;
+}
+
+.draw-tab-btn .tab-icon {
+  flex-shrink: 0;
 }
 
 .draw-tab-btn:hover {
@@ -105,6 +118,89 @@
   color: var(--primary, #00e65a);
   background: rgba(0, 230, 90, 0.1);
   border-color: rgba(0, 230, 90, 0.25);
+}
+
+.tab-label-short {
+  display: none;
+}
+
+.tab-label-full {
+  display: inline;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Matrix Header & Actions */
+.matrix-header-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.matrix-header-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.matrix-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-matrix-autofill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--border-hover, rgba(255, 255, 255, 0.15));
+  color: var(--text-main, #ffffff);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-matrix-autofill:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.btn-matrix-save {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--primary, #00e65a);
+  color: #080c10;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 230, 90, 0.25);
+  transition: all 0.2s ease;
+}
+
+.btn-matrix-save:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 230, 90, 0.4);
+}
+
+.btn-label-short {
+  display: none;
+}
+
+.btn-label-full {
+  display: inline;
 }
 
 /* Content Body */
@@ -172,7 +268,7 @@
   flex-direction: column;
   gap: 4px;
   background: rgba(0, 0, 0, 0.3);
-  padding: 8px 12px;
+  padding: 8px 10px;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
@@ -185,19 +281,29 @@
   letter-spacing: 0.5px;
 }
 
-.slot-select {
+.slot-input-field {
   background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   color: var(--text-main, #ffffff);
   border-radius: 8px;
-  padding: 6px 8px;
+  padding: 7px 9px;
   font-size: 13px;
+  font-weight: 600;
   outline: none;
   width: 100%;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
 }
 
-.slot-select:focus {
+.slot-input-field:focus {
   border-color: var(--primary, #00e65a);
+  background: rgba(0, 230, 90, 0.06);
+  box-shadow: 0 0 0 2px rgba(0, 230, 90, 0.18);
+}
+
+.slot-input-field::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+  font-weight: 400;
+  font-size: 12px;
 }
 
 /* Pelada Selector & Sorteio Action */
@@ -220,7 +326,7 @@
 
 .session-select-input {
   flex: 1;
-  min-width: 220px;
+  min-width: 200px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
@@ -241,6 +347,7 @@
   cursor: pointer;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
   box-shadow: 0 4px 14px rgba(0, 230, 90, 0.3);
   transition: all 0.2s ease;
@@ -362,21 +469,103 @@
   to { opacity: 1; transform: scale(1); }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 768px) {
+  .draw-modal-overlay {
+    padding: 8px 6px;
+  }
+
   .draw-modal-container {
-    max-height: 98vh;
+    max-height: 96vh;
     border-radius: 16px;
   }
 
+  .draw-modal-header {
+    padding: 12px 14px;
+  }
+
+  .draw-modal-title {
+    font-size: 16px;
+  }
+
+  .draw-tabs {
+    padding: 6px;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .draw-tab-btn {
+    padding: 9px 4px;
+    font-size: 12px;
+    border-radius: 10px;
+    gap: 4px;
+    flex-direction: row;
+    white-space: nowrap;
+  }
+
+  .tab-label-full {
+    display: none;
+  }
+
+  .tab-label-short {
+    display: inline;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .draw-modal-body {
-    padding: 14px;
+    padding: 14px 12px;
+    gap: 14px;
+  }
+
+  .matrix-header-actions {
+    width: 100%;
+  }
+
+  .btn-matrix-autofill,
+  .btn-matrix-save {
+    flex: 1;
+    padding: 10px 8px;
+  }
+
+  .btn-label-full {
+    display: none;
+  }
+
+  .btn-label-short {
+    display: inline;
+  }
+
+  .session-select-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .session-select-input {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .btn-draw-main {
+    width: 100%;
   }
 
   .star-slots-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .slot-input-box {
+    padding: 6px 8px;
+  }
+
+  .slot-input-field {
+    padding: 6px 8px;
+    font-size: 12px;
   }
 
   .teams-drawn-grid {
     grid-template-columns: 1fr;
   }
 }
+

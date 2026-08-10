@@ -7,8 +7,8 @@ import PlayerAvatar from '../common/PlayerAvatar';
 import './TeamDrawModal.css';
 
 const DEFAULT_TIER_NAMES = ['Nível 1 (Melhor)', 'Nível 2', 'Nível 3', 'Nível 4'];
-const TEAM_NAMES = ['Time 1 (Verde)', 'Time 2 (Amarelo)', 'Time 3 (Azul)', 'Time 4 (Vermelho)'];
-const TEAM_COLORS = ['#00e65a', '#ffd60a', '#0a84ff', '#ff375f'];
+const TEAM_NAMES = ['Time 1 (Preto)', 'Time 2 (Amarelo)', 'Time 3 (Azul)', 'Time 4 (Vermelho)'];
+const TEAM_COLORS = ['#a1a1aa', '#ffd60a', '#3b82f6', '#ff375f'];
 
 export default function TeamDrawModal({
   isOpen,
@@ -298,27 +298,38 @@ export default function TeamDrawModal({
             className={`draw-tab-btn ${activeTab === 'sorteio' ? 'active' : ''}`}
             onClick={() => setActiveTab('sorteio')}
           >
-            <Shuffle size={15} />
-            <span>Sortear Pelada</span>
+            <Shuffle size={15} className="tab-icon" />
+            <span className="tab-label-full">Sortear Pelada</span>
+            <span className="tab-label-short">Sortear</span>
           </button>
           <button
             className={`draw-tab-btn ${activeTab === 'estrelas' ? 'active' : ''}`}
             onClick={() => setActiveTab('estrelas')}
           >
-            <Layers size={15} />
-            <span>Matriz de Estrelas (20 Jogadores)</span>
+            <Layers size={15} className="tab-icon" />
+            <span className="tab-label-full">Matriz de Estrelas (20 Jogadores)</span>
+            <span className="tab-label-short">Matriz (20)</span>
           </button>
           <button
             className={`draw-tab-btn ${activeTab === 'historico' ? 'active' : ''}`}
             onClick={() => setActiveTab('historico')}
           >
-            <History size={15} />
-            <span>Transparência & Histórico ({drawCount})</span>
+            <History size={15} className="tab-icon" />
+            <span className="tab-label-full">Transparência & Histórico ({drawCount})</span>
+            <span className="tab-label-short">Histórico ({drawCount})</span>
           </button>
         </div>
 
         {/* Body */}
         <div className="draw-modal-body">
+          {/* Datalist of registered players for smart autocomplete */}
+          <datalist id="registered-players-list">
+            {registeredPlayers.map(p => (
+              <option key={p.id} value={p.name}>
+                {p.name}
+              </option>
+            ))}
+          </datalist>
           {saveSuccessMsg && (
             <div style={{
               backgroundColor: 'rgba(48, 209, 88, 0.15)',
@@ -508,7 +519,7 @@ export default function TeamDrawModal({
                           </span>
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
                           {teamsWithScores.map(t => (
                             <div key={t.id} style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: '12px', borderLeft: `3px solid ${t.color}`, display: 'flex', flexDirection: 'column', gap: 4 }}>
                               <span style={{ fontSize: '12px', fontWeight: 700, color: t.color }}>{t.name}</span>
@@ -543,29 +554,31 @@ export default function TeamDrawModal({
           {/* TAB 2: EDITAR MATRIZ DE ESTRELAS */}
           {activeTab === 'estrelas' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-                <div>
+              <div className="matrix-header-container">
+                <div className="matrix-header-title">
                   <h3 style={{ fontSize: 16, fontWeight: 700 }}>Matriz de Estrelas (20 Jogadores)</h3>
                   <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                     Defina os 20 mensalistas/diaristas divididos em 5 níveis de estrelas e 4 posições (do melhor pro pior).
                   </p>
                 </div>
 
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div className="matrix-header-actions">
                   <button
                     onClick={handleAutoFill}
-                    className="btn-primary"
-                    style={{ backgroundColor: 'transparent', border: '1px solid var(--border-hover)', color: 'var(--text-main)', fontSize: 12, padding: '8px 12px' }}
+                    className="btn-matrix-autofill"
                     title="Preencher com os jogadores mais bem pontuados do ranking"
                   >
-                    <Sparkles size={14} /> Auto-Preencher (Ranking)
+                    <Sparkles size={14} />
+                    <span className="btn-label-full">Auto-Preencher (Ranking)</span>
+                    <span className="btn-label-short">Auto-Preencher</span>
                   </button>
                   <button
                     onClick={handleSaveMatrix}
-                    className="btn-primary"
-                    style={{ fontSize: 12, padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6 }}
+                    className="btn-matrix-save"
                   >
-                    <Save size={14} /> Salvar Matriz
+                    <Save size={14} />
+                    <span className="btn-label-full">Salvar Matriz</span>
+                    <span className="btn-label-short">Salvar</span>
                   </button>
                 </div>
               </div>
@@ -595,24 +608,11 @@ export default function TeamDrawModal({
                         return (
                           <div key={idx} className="slot-input-box">
                             <span className="slot-label">{tierName}</span>
-                            <select
-                              className="slot-select"
-                              value={val}
-                              onChange={(e) => handleSlotChange(tier.key, idx, e.target.value)}
-                            >
-                              <option value="">Selecione ou digite...</option>
-                              {registeredPlayers.map(p => (
-                                <option key={p.id} value={p.name}>
-                                  {p.name}
-                                </option>
-                              ))}
-                            </select>
-                            {/* Direct text input fallback for guest/diarista players */}
                             <input
                               type="text"
-                              className="slot-select"
-                              style={{ marginTop: 4, fontSize: 11, padding: '4px 6px', background: 'rgba(255,255,255,0.03)' }}
-                              placeholder="Ou digite nome do diarista..."
+                              className="slot-input-field"
+                              list="registered-players-list"
+                              placeholder="Escolha ou digite..."
                               value={val}
                               onChange={(e) => handleSlotChange(tier.key, idx, e.target.value)}
                             />
