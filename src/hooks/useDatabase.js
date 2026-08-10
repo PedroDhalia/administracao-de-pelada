@@ -9,6 +9,7 @@ export const useDatabase = () => {
   const [registeredPlayers, setRegisteredPlayers] = useState([]);
   const [registeredGoleiros, setRegisteredGoleiros] = useState([]);
   const [users, setUsers] = useState([]);
+  const [starRatings, setStarRatings] = useState(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [dbError, setDbError] = useState(null);
   const [dataSynced, setDataSynced] = useState(false);
@@ -44,6 +45,11 @@ export const useDatabase = () => {
         setRegisteredGoleiros(Array.isArray(val) ? val : (val ? Object.values(val) : []));
       });
 
+      const unsubscribeStarRatings = onValue(ref(db, 'star_ratings'), (snapshot) => {
+        const val = snapshot.val();
+        setStarRatings(val || null);
+      });
+
       timeout = setTimeout(() => setIsLoaded(true), 4000);
 
       return () => {
@@ -52,12 +58,41 @@ export const useDatabase = () => {
         unsubscribePlayers();
         unsubscribeUsers();
         unsubscribeGoleiros();
+        unsubscribeStarRatings();
       };
     } catch (err) {
       console.error("Database initialization error:", err);
       setIsLoaded(true);
     }
   }, []);
+
+  const saveStarRatings = (ratingsData) => {
+    try {
+      set(ref(db, 'star_ratings'), ratingsData);
+    } catch (err) {
+      console.error("Error saving star ratings:", err);
+    }
+  };
+
+  const saveSessionDraw = (sessionId, newDrawRecord, updatedTeams = null) => {
+    try {
+      const updatedSessions = sessions.map(session => {
+        if (session.id === sessionId) {
+          const drawHistory = session.drawHistory || [];
+          const newHistory = [...drawHistory, newDrawRecord];
+          const newSession = { ...session, drawHistory: newHistory };
+          if (updatedTeams) {
+            newSession.teams = updatedTeams;
+          }
+          return newSession;
+        }
+        return session;
+      });
+      set(ref(db, 'sessions'), updatedSessions);
+    } catch (err) {
+      console.error("Error saving session draw record:", err);
+    }
+  };
 
   const updateSessionsAndStats = (newSessionsList, currentPlayers = registeredPlayers, currentGoleiros = registeredGoleiros) => {
     // 1. Automatically calculate team stats from matches for sessions that have matches registered in memory first
@@ -233,8 +268,11 @@ export const useDatabase = () => {
     registeredPlayers,
     registeredGoleiros,
     users,
+    starRatings,
     isLoaded,
     dbError,
-    updateSessionsAndStats
+    updateSessionsAndStats,
+    saveStarRatings,
+    saveSessionDraw
   };
 };

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   Trophy, Users, Target, Plus, Minus, Trash2, User, Star, Info,
   Flag, Goal, Calendar, ChevronLeft, ChevronDown, ChevronUp, UserPlus, Flame, Medal, Circle, Pencil,
-  LogOut, Shield, ShieldAlert, Key, Database, Camera, Hand, X, TrendingUp, TrendingDown
+  LogOut, Shield, ShieldAlert, Key, Database, Camera, Hand, X, TrendingUp, TrendingDown, Shuffle
 } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
@@ -41,11 +41,14 @@ import SoccerField from './components/session/SoccerField';
 import AuthPage from './pages/Auth';
 import PlayerProfile from './pages/PlayerProfile';
 import PlayerBadges from './components/player/PlayerBadges';
+import TeamDrawModal from './components/admin/TeamDrawModal';
+import './components/admin/TeamDrawModal.css';
 
 function App() {
   const {
     sessions, registeredPlayers, registeredGoleiros, users,
-    isLoaded, dbError, updateSessionsAndStats
+    starRatings, isLoaded, dbError, updateSessionsAndStats,
+    saveStarRatings, saveSessionDraw
   } = useDatabase();
 
   const { loggedInUserId, login, logout } = useAuth();
@@ -55,6 +58,7 @@ function App() {
   const [showMatchesModal, setShowMatchesModal] = useState(false);
   const [showSupremeAdmin, setShowSupremeAdmin] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showTeamDrawModal, setShowTeamDrawModal] = useState(false);
   const [viewingPlayerId, setViewingPlayerId] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -3033,6 +3037,20 @@ function App() {
     return (
       <div className="app-container">
         {showSupremeAdmin && isGlobalAdmin && renderSupremeAdminModal()}
+        {showTeamDrawModal && (
+          <TeamDrawModal
+            isOpen={showTeamDrawModal}
+            onClose={() => setShowTeamDrawModal(false)}
+            sessions={sessions}
+            registeredPlayers={registeredPlayers}
+            registeredGoleiros={registeredGoleiros}
+            users={users}
+            starRatings={starRatings}
+            saveStarRatings={saveStarRatings}
+            saveSessionDraw={saveSessionDraw}
+            currentUser={currentUser}
+          />
+        )}
 
         <header className="header app-header-main">
           <div className="app-header-top">
@@ -3404,6 +3422,29 @@ function App() {
             </h3>
             {isGlobalAdmin ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px',
+                    background: 'linear-gradient(135deg, #00e65a 0%, #00b344 100%)',
+                    color: '#080c10',
+                    fontWeight: 800,
+                    padding: '12px 16px',
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                    border: 'none',
+                    boxShadow: '0 4px 14px rgba(0, 230, 90, 0.3)',
+                    fontSize: '14px'
+                  }}
+                  onClick={() => setShowTeamDrawModal(true)}
+                >
+                  <Shuffle size={18} />
+                  <span>🎲 Sorteio de Times por Estrelas</span>
+                </button>
                 <form className="input-group" onSubmit={handleAddSession} style={{ marginBottom: 0 }}>
                   <input type="text" className="input-field" placeholder="Criar nova pelada..." value={newSessionName} onChange={(e) => setNewSessionName(e.target.value)} />
                   <button type="submit" className="btn-primary" title="Criar Pelada"><Plus size={20} /></button>
