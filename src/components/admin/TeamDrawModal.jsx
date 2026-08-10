@@ -103,6 +103,39 @@ export default function TeamDrawModal({
     return arr;
   };
 
+  // Generate mathematically balanced sub-level assignments across the 5 star tiers for 4 teams
+  const generateBalancedSubLevelMatrix = () => {
+    // 5 rows (star tiers 5★ to 1★), each row is a permutation of sub-level indices [0, 1, 2, 3] (Nível 1, 2, 3, 4)
+    // We search for a matrix where the 4 team sub-level rank sums differ by at most 1 point!
+    for (let attempt = 0; attempt < 500; attempt++) {
+      const assignmentMatrix = [];
+      const teamSubLevelSums = [0, 0, 0, 0];
+
+      for (let star = 0; star < 5; star++) {
+        const perm = shuffleArray([0, 1, 2, 3]);
+        assignmentMatrix.push(perm);
+        for (let team = 0; team < 4; team++) {
+          teamSubLevelSums[team] += perm[team];
+        }
+      }
+
+      const minSum = Math.min(...teamSubLevelSums);
+      const maxSum = Math.max(...teamSubLevelSums);
+
+      if (maxSum - minSum <= 1) { // Perfect balance achieved!
+        return assignmentMatrix;
+      }
+    }
+
+    // Fallback snake pattern
+    const row0 = shuffleArray([0, 1, 2, 3]);
+    const row1 = [...row0].reverse();
+    const row2 = shuffleArray([0, 1, 2, 3]);
+    const row3 = [...row2].reverse();
+    const row4 = shuffleArray([0, 1, 2, 3]);
+    return [row0, row1, row2, row3, row4];
+  };
+
   // Perform Team Draw
   const handlePerformDraw = () => {
     if (!currentSession) {
@@ -127,19 +160,24 @@ export default function TeamDrawModal({
       players: []
     }));
 
-    // For each star tier, shuffle the 4 players (sub-levels 1..4) and assign 1 to each team
-    starKeys.forEach(starInfo => {
-      const playerList = matrix[starInfo.key] || [];
-      const pool = playerList.map((name, idx) => ({
-        name: name || `Jogador ${starInfo.stars}★ (Slot ${idx + 1})`,
-        stars: starInfo.stars,
-        tierLevel: idx + 1,
-        color: starInfo.color
-      }));
+    // Generate balanced sub-level index mapping (5 rows x 4 teams)
+    const balancedSubLevelMatrix = generateBalancedSubLevelMatrix();
 
-      const shuffled = shuffleArray(pool);
-      shuffled.forEach((player, teamIdx) => {
-        teams[teamIdx].players.push(player);
+    // Assign 1 player per star category using the balanced sub-level matrix
+    starKeys.forEach((starInfo, starIndex) => {
+      const playerList = matrix[starInfo.key] || [];
+      const subLevelIndicesForTeams = balancedSubLevelMatrix[starIndex];
+
+      teams.forEach((team, teamIndex) => {
+        const chosenSubLevelIndex = subLevelIndicesForTeams[teamIndex]; // 0..3 (Nível 1..4)
+        const playerName = playerList[chosenSubLevelIndex] || `Jogador ${starInfo.stars}★ (Nível ${chosenSubLevelIndex + 1})`;
+
+        team.players.push({
+          name: playerName,
+          stars: starInfo.stars,
+          tierLevel: chosenSubLevelIndex + 1, // 1, 2, 3, 4
+          color: starInfo.color
+        });
       });
     });
 
