@@ -185,7 +185,7 @@ export default function TeamDrawModal({
 
     // Format teams for official session matches & standings
     const formattedTeams = teams.map((t, idx) => ({
-      id: idx + 1,
+      id: String(idx + 1),
       name: t.name,
       color: t.color,
       players: t.players.map(p => ({
@@ -222,7 +222,7 @@ export default function TeamDrawModal({
 
     // Convert teams into session format
     const formattedTeams = currentDrawnTeams.map((t, idx) => ({
-      id: idx + 1,
+      id: String(idx + 1),
       name: t.name,
       color: t.color,
       players: t.players.map(p => ({

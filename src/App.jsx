@@ -3480,11 +3480,11 @@ function App() {
     if (activeSession?.matches) {
       let wins = 0, draws = 0, losses = 0;
       (activeSession.matches || []).forEach(m => {
-        if (m.team1Id === t.id) {
+        if (String(m.team1Id) === String(t.id)) {
           if (m.score1 > m.score2) wins++;
           else if (m.score1 === m.score2) draws++;
           else losses++;
-        } else if (m.team2Id === t.id) {
+        } else if (String(m.team2Id) === String(t.id)) {
           if (m.score2 > m.score1) wins++;
           else if (m.score2 === m.score1) draws++;
           else losses++;
@@ -3736,8 +3736,8 @@ function App() {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {activeSession.matches.map(match => {
-                    const t1 = teams.find(t => t.id === match.team1Id);
-                    const t2 = teams.find(t => t.id === match.team2Id);
+                    const t1 = teams.find(t => String(t.id) === String(match.team1Id));
+                    const t2 = teams.find(t => String(t.id) === String(match.team2Id));
                     if (!t1 || !t2) return null;
 
                     return (

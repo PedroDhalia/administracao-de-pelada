@@ -101,11 +101,11 @@ export const useDatabase = () => {
         (session.teams || []).forEach(t => {
           let wins = 0, draws = 0, losses = 0;
           (session.matches || []).forEach(m => {
-            if (m.team1Id === t.id) {
+            if (String(m.team1Id) === String(t.id)) {
               if (m.score1 > m.score2) wins++;
               else if (m.score1 === m.score2) draws++;
               else if (m.score1 < m.score2) losses++;
-            } else if (m.team2Id === t.id) {
+            } else if (String(m.team2Id) === String(t.id)) {
               if (m.score2 > m.score1) wins++;
               else if (m.score2 === m.score1) draws++;
               else if (m.score2 < m.score1) losses++;

@@ -5,11 +5,11 @@ export const getNormalizedTeams = (session) => {
   return teams.map(t => {
     let wins = 0, draws = 0, losses = 0;
     session.matches.forEach(m => {
-      if (m.team1Id === t.id) {
+      if (String(m.team1Id) === String(t.id)) {
         if (m.score1 > m.score2) wins++;
         else if (m.score1 === m.score2) draws++;
         else if (m.score1 < m.score2) losses++;
-      } else if (m.team2Id === t.id) {
+      } else if (String(m.team2Id) === String(t.id)) {
         if (m.score2 > m.score1) wins++;
         else if (m.score2 === m.score1) draws++;
         else if (m.score2 < m.score1) losses++;
@@ -182,8 +182,8 @@ export const getPlayerStats = (playerName, sessions = [], registeredPlayers = []
         // Calculate clean sheets for this player
         if (session.matches) {
           session.matches.forEach(m => {
-            if (m.team1Id === playerRating.teamId && m.score2 === 0) cleanSheetsCount++;
-            if (m.team2Id === playerRating.teamId && m.score1 === 0) cleanSheetsCount++;
+            if (String(m.team1Id) === String(playerRating.teamId) && m.score2 === 0) cleanSheetsCount++;
+            if (String(m.team2Id) === String(playerRating.teamId) && m.score1 === 0) cleanSheetsCount++;
           });
         }
       }
