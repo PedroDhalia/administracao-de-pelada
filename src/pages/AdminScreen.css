@@ -1,0 +1,50 @@
+/* ===== Aba Admin ===== */
+
+.admin-screen {
+  padding: 16px;
+}
+
+.admin-grid {
+  margin-bottom: 0;
+}
+
+.menu-compact-btn.is-active {
+  border-color: var(--primary);
+  background: var(--primary-glow);
+  color: var(--primary);
+}
+
+.admin-feedback {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(48, 209, 88, 0.3);
+  background: var(--success-bg);
+  color: var(--success);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.admin-feedback > svg {
+  flex-shrink: 0;
+}
+
+.admin-feedback-actions {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.admin-feedback-actions button {
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--success);
+  background: transparent;
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}

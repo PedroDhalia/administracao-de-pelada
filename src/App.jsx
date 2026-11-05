@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   Trophy, Users, Target, Plus, Minus, Trash2, User, Star, Info,
   Flag, Goal, Calendar, ChevronLeft, ChevronDown, ChevronUp, UserPlus, Flame, Medal, Circle, Pencil,
-  LogOut, Shield, ShieldAlert, Key, Database, Camera, Hand, X, TrendingUp, TrendingDown, Shuffle
+  LogOut, Shield, ShieldAlert, Key, Database, Camera, X, TrendingUp, TrendingDown
 } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area,
@@ -19,6 +19,7 @@ import { db } from './api/firebase';
 import { CURRENT_FORMULA_VERSION, GENERATE_ID as generateId } from './constants';
 import {
   calculateSessionPlayerRatings,
+  getNormalizedTeams,
   getMonthlyHighlights,
   getPlayerStatsForMonth,
   getPlayerStats,
@@ -29,7 +30,7 @@ import {
   getPlayersStatsForSeason,
   getFullPlayersStatsForSeason
 } from './utils/calculations';
-import { getTextColor, getNotaColor, compressImage } from './utils/helpers';
+import { getTextColor, getNotaColor, getTeamColor, compressImage } from './utils/helpers';
 
 // Hooks
 import { useDatabase } from './hooks/useDatabase';
@@ -43,6 +44,12 @@ import PlayerProfile from './pages/PlayerProfile';
 import PlayerBadges from './components/player/PlayerBadges';
 import TeamDrawModal from './components/admin/TeamDrawModal';
 import './components/admin/TeamDrawModal.css';
+import FinanceScreen from './pages/FinanceScreen';
+import { useFinance } from './hooks/useFinance';
+import HomeSection, { HomeLinkButton } from './components/home/HomeSection';
+import LatestSessionCard from './components/home/LatestSessionCard';
+import AdminScreen from './pages/AdminScreen';
+import RankingPreview from './components/home/RankingPreview';
 
 function App() {
   const {
@@ -59,6 +66,7 @@ function App() {
   const [showSupremeAdmin, setShowSupremeAdmin] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showTeamDrawModal, setShowTeamDrawModal] = useState(false);
+  const [showFinanceScreen, setShowFinanceScreen] = useState(false);
   const [viewingPlayerId, setViewingPlayerId] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -167,7 +175,9 @@ function App() {
     const latest = sessions[0];
 
     const ratedPlayers = calculateSessionPlayerRatings(latest, registeredPlayers);
-    const mvp = ratedPlayers.length > 0 ? ratedPlayers[0] : null;
+    // Sem gols/resultados todos ficam com nota 7.0 — aí não existe MVP de verdade
+    const hasRealRatings = ratedPlayers.some(r => r.nota !== 7.0);
+    const mvp = ratedPlayers.length > 0 && hasRealRatings ? ratedPlayers[0] : null;
 
     const sessionPlayers = [];
     if (latest.teams) {
@@ -193,13 +203,34 @@ function App() {
       .filter(p => (p.assists || 0) > 0)
       .sort((a, b) => (b.assists || 0) - (a.assists || 0) || getPlayerNota(b.name) - getPlayerNota(a.name))[0] || null;
 
+    // Classificação da rodada (mesmo critério usado nas estatísticas: pontos e depois vitórias)
+    const standings = getNormalizedTeams(latest)
+      .map(t => ({ ...t, points: (t.wins || 0) * 3 + (t.draws || 0) }))
+      .sort((a, b) => b.points - a.points || (b.wins || 0) - (a.wins || 0));
+    const maxPoints = standings[0]?.points || 0;
+    const maxWins = standings[0]?.wins || 0;
+    const champions = maxPoints > 0
+      ? standings.filter(t => t.points === maxPoints && (t.wins || 0) === maxWins)
+      : [];
+
+    const matches = latest.matches || [];
+    const totalGoals = matches.length > 0
+      ? matches.reduce((sum, m) => sum + (m.score1 || 0) + (m.score2 || 0), 0)
+      : sessionPlayers.reduce((sum, p) => sum + (p.goals || 0), 0);
+
     return {
+      sessionId: latest.id,
       sessionName: latest.name,
       sessionDate: latest.date,
       mvp,
       topScorer,
       topAssister,
-      matches: latest.matches || []
+      matches,
+      champions,
+      teamsCount: (latest.teams || []).length,
+      playersCount: sessionPlayers.length,
+      matchesCount: matches.length,
+      totalGoals
     };
   }, [sessions, registeredPlayers]);
 
@@ -238,6 +269,33 @@ function App() {
   const currentUser = users?.find(u => u.id === loggedInUserId) || null;
   const isGlobalAdmin = currentUser?.is_admin === true;
   const canEditSession = (session) => isGlobalAdmin || session?.admins?.includes(currentUser?.id) || false;
+
+  // Controle de diárias: só carregado para admins globais
+  const {
+    finance, isFinanceLoaded, setMensalista, replaceMensalistas, setMonthDailyFee, setPayment
+  } = useFinance(isGlobalAdmin);
+
+  // Posição de quem está logado no ranking geral (mesma ordenação do Top 5)
+  const currentUserRanking = useMemo(() => {
+    const playerId = currentUser?.jogadorId;
+    if (!playerId) return null;
+    const ranked = [...registeredPlayers]
+      .filter(p => (p.media_nota || 0) > 0)
+      .sort((a, b) => (b.media_nota || 0) - (a.media_nota || 0));
+    const index = ranked.findIndex(p => p.id === playerId);
+    return index >= 0 ? { position: index + 1, player: ranked[index] } : null;
+  }, [registeredPlayers, currentUser?.jogadorId]);
+
+  const openPlayerByName = (playerName) => {
+    const normName = String(playerName || '').trim().toLowerCase();
+    if (!normName) return;
+    const player = registeredPlayers.find(p => (p.name || '').trim().toLowerCase() === normName) ||
+      registeredGoleiros.find(g => (g.name || '').trim().toLowerCase() === normName);
+    if (player) {
+      setViewingPlayerId(player.id);
+      setShowProfile(true);
+    }
+  };
 
   const handleLoginSubmit = (e) => {
     e.preventDefault();
@@ -344,6 +402,7 @@ function App() {
     setShowPlayersScreen(false);
     setShowMonthlyStatsScreen(false);
     setShowGoleirosScreen(false);
+    setShowFinanceScreen(false);
     setShowProfile(false);
     setViewingPlayerId(null);
   };
@@ -511,6 +570,7 @@ function App() {
     const newSessionsList = [newSession, ...(sessions || [])];
     updateSessionsAndStats(newSessionsList);
     setNewSessionName('');
+    return newSession.id;
   };
 
   const removeSession = (id) => {
@@ -562,6 +622,7 @@ function App() {
     const newList = [...registeredPlayers, newPlayer];
     set(ref(db, 'players'), newList);
     form.reset();
+    return true;
   };
 
   const removeRegisteredPlayer = (id) => {
@@ -596,6 +657,7 @@ function App() {
     const newList = [...registeredGoleiros, newGoleiro];
     set(ref(db, 'goleiros'), newList);
     form.reset();
+    return true;
   };
 
   const removeRegisteredGoleiro = (id) => {
@@ -946,23 +1008,6 @@ function App() {
   };
 
   // --- RENDER HELPERS ---
-  const getTeamColor = (teamName) => {
-    if (!teamName) return 'var(--primary)';
-    const lower = teamName.toLowerCase();
-    if (lower.includes('branco')) return '#ffffff';
-    if (lower.includes('preta') || lower.includes('preto')) return '#1a1a1a';
-    if (lower.includes('verde')) return '#22c55e';
-    if (lower.includes('azul')) return '#3b82f6';
-    if (lower.includes('vermelho')) return '#ef4444';
-    if (lower.includes('amarelo')) return '#eab308';
-    if (lower.includes('roxo')) return '#a855f7';
-    if (lower.includes('rosa')) return '#ec4899';
-    if (lower.includes('laranja')) return '#f97316';
-    if (lower.includes('cinza')) return '#9ca3af';
-    if (lower.includes('sem camisa') || lower.includes('colete')) return '#fcd34d';
-    return 'var(--primary)';
-  };
-
   const SoccerBallIcon = ({ color, size }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill={color} stroke="rgba(0,0,0,0.4)" strokeWidth="1">
       <circle cx="12" cy="12" r="10" />
@@ -1043,7 +1088,7 @@ function App() {
         </header>
 
         <div className="admin-user-grid">
-          {users.sort((a, b) => a.name.localeCompare(b.name)).map(u => {
+          {[...users].sort((a, b) => a.name.localeCompare(b.name)).map(u => {
             const linkedPlayer = registeredPlayers.find(p => p.id === u.jogadorId);
             return (
               <div key={u.id} className="admin-user-card">
@@ -1070,6 +1115,20 @@ function App() {
             );
           })}
         </div>
+        <div className="admin-actions-footer" style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            onClick={() => {
+              if (confirm("Tem certeza que deseja recalcular todas as estatísticas e badges de todas as peladas no banco de dados Firebase? Isso processará todo o histórico.")) {
+                updateSessionsAndStats(sessions, registeredPlayers, registeredGoleiros);
+                alert("Estatísticas recalculadas e salvas com sucesso!");
+              }
+            }}
+            className="btn-primary"
+            style={{ backgroundColor: 'var(--primary)', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', fontSize: '13px', borderRadius: '8px' }}
+          >
+            <Database size={16} /> Recalcular Estatísticas do Banco
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1079,6 +1138,7 @@ function App() {
     const isPartidasActive = activeTab === 'partidas' || showAllSessionsScreen;
     const isRankingsActive = activeTab === 'ranking' || (activeTab !== 'menu' && (showPlayersScreen || showMonthlyStatsScreen));
     const isMenuActive = activeTab === 'menu' || activeTab === 'players' || showGoleirosScreen;
+    const isAdminActive = activeTab === 'admin';
 
     return (
       <nav className="bottom-nav">
@@ -1091,6 +1151,7 @@ function App() {
             setShowGoleirosScreen(false);
             setShowAllSessionsScreen(false);
             setShowAllHighlightsScreen(false);
+            setShowFinanceScreen(false);
             setShowProfile(false);
             setActiveSessionId(null);
           }}
@@ -1107,6 +1168,7 @@ function App() {
             setShowGoleirosScreen(false);
             setShowAllSessionsScreen(true);
             setShowAllHighlightsScreen(false);
+            setShowFinanceScreen(false);
             setShowProfile(false);
             setActiveSessionId(null);
           }}
@@ -1123,6 +1185,7 @@ function App() {
             setShowGoleirosScreen(false);
             setShowAllSessionsScreen(false);
             setShowAllHighlightsScreen(false);
+            setShowFinanceScreen(false);
             setShowProfile(false);
             setActiveSessionId(null);
           }}
@@ -1130,6 +1193,25 @@ function App() {
           <span className="bottom-nav-icon">📊</span>
           <span>Rankings</span>
         </button>
+        {isGlobalAdmin && (
+          <button
+            className={`bottom-nav-item ${isAdminActive ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('admin');
+              setShowPlayersScreen(false);
+              setShowMonthlyStatsScreen(false);
+              setShowGoleirosScreen(false);
+              setShowAllSessionsScreen(false);
+              setShowAllHighlightsScreen(false);
+              setShowFinanceScreen(false);
+              setShowProfile(false);
+              setActiveSessionId(null);
+            }}
+          >
+            <span className="bottom-nav-icon">🛡️</span>
+            <span>Admin</span>
+          </button>
+        )}
         <button
           className={`bottom-nav-item ${isMenuActive ? 'active' : ''}`}
           onClick={() => {
@@ -1139,6 +1221,7 @@ function App() {
             setShowGoleirosScreen(false);
             setShowAllSessionsScreen(false);
             setShowAllHighlightsScreen(false);
+            setShowFinanceScreen(false);
             setShowProfile(false);
             setActiveSessionId(null);
           }}
@@ -1233,16 +1316,6 @@ function App() {
             <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Lista e estatísticas individuais de todos os jogadores</div>
           </div>
         </button>
-
-        {isGlobalAdmin && (
-          <button className="menu-item-btn" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }} onClick={() => setShowSupremeAdmin(true)}>
-            <span style={{ fontSize: '18px' }}>⚙️</span>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 'bold' }}>Painel de Controle</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Gerencie senhas, admins e contas</div>
-            </div>
-          </button>
-        )}
 
         <button className="menu-item-btn" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', color: 'var(--danger)' }} onClick={handleLogout}>
           <span style={{ fontSize: '18px' }}>🚪</span>
@@ -1840,6 +1913,29 @@ function App() {
     );
   }
   if (!activeSessionId) {
+    if (showFinanceScreen && isGlobalAdmin) {
+      return (
+        <div className="app-container">
+          <FinanceScreen
+            sessions={sessions}
+            registeredPlayers={registeredPlayers}
+            registeredGoleiros={registeredGoleiros}
+            users={users}
+            currentUser={currentUser}
+            finance={finance}
+            isFinanceLoaded={isFinanceLoaded}
+            setMensalista={setMensalista}
+            replaceMensalistas={replaceMensalistas}
+            setMonthDailyFee={setMonthDailyFee}
+            setPayment={setPayment}
+            onBack={() => setShowFinanceScreen(false)}
+            onOpenSession={(sessionId) => setActiveSessionId(sessionId)}
+          />
+          {renderBottomNav()}
+        </div>
+      );
+    }
+
     if (showAllSessionsScreen) {
       return (
         <div className="app-container">
@@ -3027,8 +3123,45 @@ function App() {
     if (activeTab === 'menu') {
       return (
         <div className="app-container">
-          {showSupremeAdmin && isGlobalAdmin && renderSupremeAdminModal()}
           {renderMenuScreen()}
+          {renderBottomNav()}
+        </div>
+      );
+    }
+
+    if (activeTab === 'admin' && isGlobalAdmin) {
+      return (
+        <div className="app-container">
+          {showSupremeAdmin && renderSupremeAdminModal()}
+          {showTeamDrawModal && (
+            <TeamDrawModal
+              isOpen={showTeamDrawModal}
+              onClose={() => setShowTeamDrawModal(false)}
+              sessions={sessions}
+              registeredPlayers={registeredPlayers}
+              registeredGoleiros={registeredGoleiros}
+              users={users}
+              starRatings={starRatings}
+              saveStarRatings={saveStarRatings}
+              saveSessionDraw={saveSessionDraw}
+              currentUser={currentUser}
+            />
+          )}
+          <AdminScreen
+            sessions={sessions}
+            registeredPlayers={registeredPlayers}
+            finance={finance}
+            isFinanceLoaded={isFinanceLoaded}
+            onOpenFinance={() => setShowFinanceScreen(true)}
+            onOpenDraw={() => setShowTeamDrawModal(true)}
+            onOpenSystem={() => setShowSupremeAdmin(true)}
+            onOpenSession={(sessionId) => setActiveSessionId(sessionId)}
+            newSessionName={newSessionName}
+            setNewSessionName={setNewSessionName}
+            onAddSession={handleAddSession}
+            onRegisterPlayer={handleRegisterPlayer}
+            onRegisterGoleiro={handleRegisterGoleiro}
+          />
           {renderBottomNav()}
         </div>
       );
@@ -3036,439 +3169,187 @@ function App() {
 
     return (
       <div className="app-container">
-        {showSupremeAdmin && isGlobalAdmin && renderSupremeAdminModal()}
-        {showTeamDrawModal && (
-          <TeamDrawModal
-            isOpen={showTeamDrawModal}
-            onClose={() => setShowTeamDrawModal(false)}
-            sessions={sessions}
-            registeredPlayers={registeredPlayers}
-            registeredGoleiros={registeredGoleiros}
-            users={users}
-            starRatings={starRatings}
-            saveStarRatings={saveStarRatings}
-            saveSessionDraw={saveSessionDraw}
-            currentUser={currentUser}
-          />
-        )}
-
-        <header className="header app-header-main">
-          <div className="app-header-top">
-            <img src="/logo.png" alt="Selva FC Logo" style={{ width: 48, height: 48 }} />
-            <h1>Pelada</h1>
-          </div>
-          <div className="app-header-actions">
-            <span onClick={() => setShowProfile(true)} className="user-pill">
-              <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={currentUser?.name} userId={currentUser?.id} size={28} />
-              <span style={{ fontWeight: 600 }}>{currentUser?.name}</span>
-              {isGlobalAdmin && <Shield size={14} color="var(--primary)" title="Administrador Global" />}
-            </span>
-            {isGlobalAdmin && <button onClick={() => setShowSupremeAdmin(true)} className="icon-btn sistema-btn" title="Painel de Controle"><Database size={14} /> Sistema</button>}
-            <button onClick={handleLogout} className="icon-btn logout-btn" title="Sair"><LogOut size={16} /></button>
-          </div>
+        <header className="header home-header">
+          <img src="/logo.png" alt="Selva FC Logo" className="home-header-logo" />
+          <h1>Pelada</h1>
+          <button type="button" onClick={() => setShowProfile(true)} className="user-pill" title="Meu perfil">
+            <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} playerName={currentUser?.name} userId={currentUser?.id} size={28} />
+            <span className="user-pill-name">{(currentUser?.name || '').split(' ')[0]}</span>
+            {isGlobalAdmin && <Shield size={14} color="var(--primary)" title="Administrador Global" />}
+          </button>
         </header>
-
-
-        {showSupremeAdmin && isGlobalAdmin && (
-          <div className="admin-overlay">
-            <div className="admin-panel card animated">
-              <header className="admin-panel-header">
-                <h2 className="admin-panel-title"><Database size={22} /> Área do Admin Supremo</h2>
-                <button className="admin-close-btn" onClick={() => setShowSupremeAdmin(false)}>✕</button>
-              </header>
-
-              <div className="admin-user-grid">
-                {users.sort((a, b) => a.name.localeCompare(b.name)).map(u => {
-                  const linkedPlayer = registeredPlayers.find(p => p.id === u.jogadorId);
-                  return (
-                    <div key={u.id} className="admin-user-card">
-                      <div className="admin-user-info">
-                        <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={linkedPlayer?.name || ''} size={40} />
-                        <div className="admin-user-details">
-                          <span className="admin-user-name">
-                            {u.name}
-                            {u.is_admin && <Shield size={14} color="#eab308" title="Admin Global" />}
-                          </span>
-                          <span className="admin-user-email">{u.email}</span>
-                          <span className="admin-user-linked">
-                            Jogador: {linkedPlayer ? <span style={{ color: 'var(--primary)' }}>{linkedPlayer.name}</span> : <span style={{ color: 'var(--danger)' }}>Nenhum</span>}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="admin-user-actions">
-                        <button className="admin-action-btn admin-action-primary" onClick={() => handleChangePassword(u.id)}><Key size={13} /> Trocar Senha</button>
-                        {!u.is_admin && <button className="admin-action-btn admin-action-promote" onClick={() => promoteToGlobalAdmin(u.id)}><Shield size={13} /> Promover</button>}
-                        {u.is_admin && u.id !== currentUser.id && (currentUser?.id === users[0]?.id || (currentUser?.name && currentUser.name.toLowerCase().includes('pedro dhalia'))) && <button className="admin-action-btn" style={{ backgroundColor: 'transparent', border: '1px solid rgba(239, 68, 68, 0.5)', color: 'var(--danger)' }} onClick={() => demoteFromGlobalAdmin(u.id)}><Shield size={13} /> Rebaixar</button>}
-                        {u.id !== currentUser.id && <button className="admin-action-btn admin-action-danger" onClick={() => deleteUser(u.id)}><Trash2 size={13} /> Excluir</button>}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="admin-actions-footer" style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'flex-end' }}>
-                <button
-                  onClick={() => {
-                    if (confirm("Tem certeza que deseja recalcular todas as estatísticas e badges de todas as peladas no banco de dados Firebase? Isso processará todo o histórico.")) {
-                      updateSessionsAndStats(sessions, registeredPlayers, registeredGoleiros);
-                      alert("Estatísticas recalculadas e salvas com sucesso!");
-                    }
-                  }}
-                  className="btn-primary"
-                  style={{ backgroundColor: 'var(--primary)', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', fontSize: '13px', borderRadius: '8px' }}
-                >
-                  <Database size={16} /> Recalcular Estatísticas do Banco
-                </button>
-              </div>
-
-            </div>
-          </div>
-        )}
 
         <main className="main-content">
 
-          {allHighlights.length > 0 && (
-            <div className="highlights-section animated" style={{ marginBottom: 8 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <h2 style={{ color: 'var(--text-main)', fontSize: 16, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Trophy color="var(--primary)" size={20} />
-                  Destaques do Mês
-                </h2>
-                {allHighlights.length > 1 && (
-                  <button className="btn-primary" style={{ padding: '6px 12px', fontSize: '12px', backgroundColor: 'transparent', border: '1px solid var(--primary)', color: 'var(--primary)' }} onClick={() => setShowAllHighlightsScreen(true)}>
-                    Ver Todos ({allHighlights.length})
-                  </button>
-                )}
-              </div>
-
-              <div className="highlight-months-container" style={{ display: 'flex', flexDirection: 'column', gap: '24px', marginBottom: 24 }}>
-                {(() => {
-                  const hl = allHighlights[0];
-                  return (
-                    <div key={hl.monthKey} className="month-group">
-                      <h3 style={{ fontSize: 14, color: 'var(--primary)', marginBottom: 12, borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 6 }}>
-                        Destaques — {hl.label}
-                      </h3>
-                      <div className="highlights-grid">
-                        {(() => {
-                          const renderCard = (title, statObj, statKey, unit, cardId, infoText = null) => {
-                            const val = statObj[statKey];
-                            const hasMultiple = statObj.tied && statObj.tied.length > 1;
-                            const isExp = expandedHighlights[cardId];
-                            return (
-                              <div className="highlight-card" onClick={() => hasMultiple && toggleHighlight(cardId)} style={hasMultiple ? { cursor: 'pointer' } : {}}>
-                                <span className="hl-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                  <span>{title}</span>
-                                  {infoText && (
-                                    <div onClick={(e) => toggleInfoTooltip(cardId, e)} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', opacity: 0.8, padding: '2px', marginLeft: 'auto' }}>
-                                      <Info size={14} />
-                                    </div>
-                                  )}
-                                </span>
-
-                                {infoText && showInfoTooltip[cardId] && (
-                                  <div className="animated" style={{ fontSize: 10, color: 'var(--text-muted)', backgroundColor: 'rgba(0,0,0,0.3)', padding: '6px', borderRadius: '4px', lineHeight: '1.3', marginBottom: 8 }}>
-                                    {infoText}
-                                  </div>
-                                )}
-
-                                <div className="hl-name" style={{ display: 'flex', flexDirection: hasMultiple ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: hasMultiple ? 6 : 8, width: '100%', flexWrap: 'wrap' }}>
-                                  {val > 0 && !hasMultiple && (
-                                    <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar}
-                                      playerName={statObj.name}
-                                      size={24}
-                                      onClick={() => {
-                                        const p = registeredPlayers.find(rp => (rp.name || '').trim().toLowerCase() === (statObj.name || '').trim().toLowerCase()) ||
-                                          registeredGoleiros.find(rg => (rg.name || '').trim().toLowerCase() === (statObj.name || '').trim().toLowerCase());
-                                        if (p) {
-                                          setViewingPlayerId(p.id);
-                                          setShowProfile(true);
-                                        }
-                                      }}
-                                    />
-                                  )}
-                                  <span
-                                    style={{
-                                      textAlign: 'center',
-                                      wordBreak: 'break-word',
-                                      lineHeight: 1.3,
-                                      cursor: (!hasMultiple && val > 0) ? 'pointer' : 'default',
-                                      transition: 'color 0.2s ease'
-                                    }}
-                                    onClick={(e) => {
-                                      if (!hasMultiple && val > 0) {
-                                        e.stopPropagation();
-                                        const p = registeredPlayers.find(rp => rp.name === statObj.name) || registeredGoleiros.find(rg => rg.name === statObj.name);
-                                        if (p) {
-                                          setViewingPlayerId(p.id);
-                                          setShowProfile(true);
-                                        }
-                                      }
-                                    }}
-                                    onMouseOver={(e) => { if (!hasMultiple && val > 0) e.currentTarget.style.color = 'var(--primary)'; }}
-                                    onMouseOut={(e) => { if (!hasMultiple && val > 0) e.currentTarget.style.color = ''; }}
-                                    title={(!hasMultiple && val > 0) ? "Ver perfil" : ""}
-                                  >
-                                    {val > 0 ? statObj.name : '-'}
-                                  </span>
-                                  {hasMultiple && val > 0 && (
-                                    <span style={{ fontSize: 10, color: 'var(--primary)', backgroundColor: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.2)', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
-                                      {isExp ? 'Recolher' : 'Ver Todos'}
-                                    </span>
-                                  )}
-                                </div>
-                                <span className="hl-stat">{val > 0 ? (unit === 'Nota' ? `${unit} ${val.toFixed(2)}` : `${val} ${unit}`) : '-'}</span>
-
-                                {hasMultiple && isExp && val > 0 && (
-                                  <div style={{ marginTop: 12, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                    {statObj.tied.map((p, idx) => (
-                                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-main)' }}>
-                                        <span>{p.name}</span>
-                                        <span style={{ color: 'var(--primary)', fontWeight: 'bold' }}>{unit === 'Nota' ? `${unit} ${p[statKey].toFixed(2)}` : `${p[statKey]} ${unit}`}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          };
-
-                          return (
-                            <>
-                              {renderCard('⚽ Artilheiro', hl.topScorer, 'goals', 'Gols', `art-${hl.monthKey}`)}
-                              {renderCard('🎯 Garçom', hl.topAssister, 'assists', 'Assist.', `ass-${hl.monthKey}`)}
-                              {renderCard('⭐ MVP', hl.mvp, 'mvpScore', 'Nota', `mvp-${hl.monthKey}`, "Nota de 0 a 10. Média do desempenho nas peladas deste mês.")}
-                              {renderCard('🏆 Decisivo', hl.topChamp, 'champWins', 'Peladas', `chmp-${hl.monthKey}`)}
-                            </>
-                          );
-                        })()}
-                      </div>
-
-                      {/* Time do Mês */}
-                      {hl.teamOfMonth && (
-                        <div className="soccer-field-container animated">
-                          <h4 style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                            Time do Mês — {hl.label}
-                          </h4>
-                          <div className="soccer-field">
-                            <div className="field-line field-center-line"></div>
-                            <div className="field-line field-center-circle"></div>
-                            <div className="field-line field-penalty-area-top"></div>
-                            <div className="field-line field-penalty-area-bottom"></div>
-
-                            <SoccerField
-                              users={users}
-                              players={hl.teamOfMonth.atacantes}
-                              type="Atacante"
-                              sourceRatings={[]}
-                              isHighlights={true}
-                              registeredPlayers={registeredPlayers}
-                              registeredGoleiros={registeredGoleiros}
-                              onPlayerClick={(pObj) => {
-                                setViewingPlayerId(pObj.id);
-                                setShowProfile(true);
-                              }}
-                            />
-                            <SoccerField
-                              users={users}
-                              players={hl.teamOfMonth.meias}
-                              type="Meia"
-                              sourceRatings={[]}
-                              isHighlights={true}
-                              registeredPlayers={registeredPlayers}
-                              registeredGoleiros={registeredGoleiros}
-                              onPlayerClick={(pObj) => {
-                                setViewingPlayerId(pObj.id);
-                                setShowProfile(true);
-                              }}
-                            />
-                            <SoccerField
-                              users={users}
-                              players={hl.teamOfMonth.zagueiros}
-                              type="Zagueiro"
-                              sourceRatings={[]}
-                              isHighlights={true}
-                              registeredPlayers={registeredPlayers}
-                              registeredGoleiros={registeredGoleiros}
-                              onPlayerClick={(pObj) => {
-                                setViewingPlayerId(pObj.id);
-                                setShowProfile(true);
-                              }}
-                            />
-                          </div>
-                          {isGlobalAdmin && (
-                            <p style={{ fontSize: 10, color: 'var(--text-muted)', textAlign: 'center', marginTop: 8 }}>
-
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-            </div>
-          )}
-
-
+          {/* 1. Última pelada: resultado + destaques da rodada juntos */}
           {sessions.length === 0 ? (
             <div className="empty-state">
               <Calendar size={48} />
-              <p>Nenhuma pelada registrada.<br />Crie uma nova nas opções abaixo!</p>
+              <p>
+                Nenhuma pelada registrada ainda.
+                {isGlobalAdmin && <><br />Crie a primeira na aba Admin.</>}
+              </p>
             </div>
           ) : (
-            <div className="session-list" style={{ marginBottom: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <h2 style={{ fontSize: '15px', color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontFamily: "'Outfit', sans-serif" }}>
-                  ⚽ Última Pelada
-                </h2>
-                {sessions.length > 1 && (
-                  <button className="btn-primary" style={{ padding: '6px 12px', fontSize: '12px', backgroundColor: 'transparent', border: '1px solid var(--primary)', color: 'var(--primary)' }} onClick={() => { setActiveTab('partidas'); setShowAllSessionsScreen(true); }}>
-                    Ver Todas ({sessions.length})
-                  </button>
-                )}
-              </div>
-
-              {/* Card de Última Pelada simplificado */}
-              <div className="card animated" style={{ padding: '16px', cursor: 'pointer' }} onClick={() => setActiveSessionId(sessions[0].id)}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '13px', color: 'var(--text-main)', fontWeight: 'bold' }}>📅 Pelada do dia {latestSessionHighlights.sessionDate}</span>
-                  <span style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 'bold', backgroundColor: 'rgba(34, 197, 94, 0.1)', padding: '4px 10px', borderRadius: '12px' }}>Ver Detalhes →</span>
-                </div>
-              </div>
-
-              {/* Destaques da Rodada */}
-              <h2 style={{ fontSize: '15px', color: 'var(--text-main)', margin: '20px 0 12px 0', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: "'Outfit', sans-serif" }}>
-                🏆 Destaques da Rodada
-              </h2>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '24px' }} className="animated">
-                {/* MVP */}
-                <div className="card animated" style={{ padding: '12px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', textAlign: 'center', background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.05) 0%, rgba(0,0,0,0.1) 100%)', border: '1px solid rgba(234, 179, 8, 0.15)', cursor: 'pointer' }} onClick={() => {
-                  const pObj = registeredPlayers.find(rp => rp.name === latestSessionHighlights.mvp?.name) || registeredGoleiros.find(rg => rg.name === latestSessionHighlights.mvp?.name);
-                  if (pObj) { setViewingPlayerId(pObj.id); setShowProfile(true); }
-                }}>
-                  <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#eab308', textTransform: 'uppercase', letterSpacing: '0.5px' }}>👑 MVP</span>
-                  <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={latestSessionHighlights.mvp?.name} size={36} />
-                  <span style={{ fontSize: '12px', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>{latestSessionHighlights.mvp ? latestSessionHighlights.mvp.name : '-'}</span>
-                  <span style={{ fontSize: '11px', color: '#eab308', fontWeight: 'bold' }}>{latestSessionHighlights.mvp ? `Nota ${latestSessionHighlights.mvp.nota.toFixed(1)}` : '-'}</span>
-                </div>
-
-                {/* ARTILHEIRO */}
-                <div className="card animated" style={{ padding: '12px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', textAlign: 'center', background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.05) 0%, rgba(0,0,0,0.1) 100%)', border: '1px solid rgba(34, 197, 94, 0.15)', cursor: 'pointer' }} onClick={() => {
-                  const pObj = registeredPlayers.find(rp => rp.name === latestSessionHighlights.topScorer?.name) || registeredGoleiros.find(rg => rg.name === latestSessionHighlights.topScorer?.name);
-                  if (pObj) { setViewingPlayerId(pObj.id); setShowProfile(true); }
-                }}>
-                  <span style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>⚽ Artilheiro</span>
-                  <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={latestSessionHighlights.topScorer?.name} size={36} />
-                  <span style={{ fontSize: '12px', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>{latestSessionHighlights.topScorer ? latestSessionHighlights.topScorer.name : '-'}</span>
-                  <span style={{ fontSize: '11px', color: 'var(--primary)', fontWeight: 'bold' }}>{latestSessionHighlights.topScorer ? `${latestSessionHighlights.topScorer.goals} Gols` : '-'}</span>
-                </div>
-
-                {/* ASSISTENTE */}
-                <div className="card animated" style={{ padding: '12px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', textAlign: 'center', background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.05) 0%, rgba(0,0,0,0.1) 100%)', border: '1px solid rgba(168, 85, 247, 0.15)', cursor: 'pointer' }} onClick={() => {
-                  const pObj = registeredPlayers.find(rp => rp.name === latestSessionHighlights.topAssister?.name) || registeredGoleiros.find(rg => rg.name === latestSessionHighlights.topAssister?.name);
-                  if (pObj) { setViewingPlayerId(pObj.id); setShowProfile(true); }
-                }}>
-                  <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#a855f7', textTransform: 'uppercase', letterSpacing: '0.5px' }}>🎯 Garçom</span>
-                  <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={latestSessionHighlights.topAssister?.name} size={36} />
-                  <span style={{ fontSize: '12px', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>{latestSessionHighlights.topAssister ? latestSessionHighlights.topAssister.name : '-'}</span>
-                  <span style={{ fontSize: '11px', color: '#a855f7', fontWeight: 'bold' }}>{latestSessionHighlights.topAssister ? `${latestSessionHighlights.topAssister.assists} Assist.` : '-'}</span>
-                </div>
-              </div>
-
-              {/* Ranking Resumido */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '24px 0 12px 0' }}>
-                <h2 style={{ fontSize: '15px', color: 'var(--text-main)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontFamily: "'Outfit', sans-serif" }}>
-                  📊 Ranking Resumido (Top 5)
-                </h2>
-                <button className="btn-primary" style={{ padding: '6px 12px', fontSize: '12px', backgroundColor: 'transparent', border: '1px solid var(--primary)', color: 'var(--primary)' }} onClick={() => { setActiveTab('ranking'); setShowPlayersScreen(true); setShowMonthlyStatsScreen(false); }}>
-                  Ver Completo
-                </button>
-              </div>
-
-              <div className="card animated" style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {summaryRanking.length === 0 ? (
-                  <p style={{ color: 'var(--text-muted)', fontSize: 13, textAlign: 'center', padding: '10px 0' }}>Nenhum jogador pontuou ainda.</p>
-                ) : (
-                  summaryRanking.map((p, idx) => {
-                    let color = 'var(--text-main)';
-                    if (p.media_nota >= 9) color = '#22c55e';
-                    else if (p.media_nota >= 7) color = '#4ade80';
-                    else if (p.media_nota >= 5) color = '#eab308';
-                    else color = '#ef4444';
-
-                    return (
-                      <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: idx < summaryRanking.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }} onClick={() => { setViewingPlayerId(p.id); setShowProfile(true); }}>
-                          <span style={{ fontSize: '12px', fontWeight: '800', color: 'var(--text-muted)', width: '20px', textAlign: 'center', opacity: 0.6 }}>{idx + 1}º</span>
-                          <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros} setSelectedAvatar={setSelectedAvatar} playerName={p.name} size={32} />
-                          <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ fontSize: '14px', fontWeight: '600' }}>{p.name}</span>
-                            {p.posicao && <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{p.posicao}</span>}
-                          </div>
-                        </div>
-                        <span style={{ fontWeight: 'bold', color: color, fontSize: '14px' }}>{p.media_nota ? p.media_nota.toFixed(2) : '0.00'}</span>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
+            <HomeSection
+              icon="⚽"
+              title="Última Pelada"
+              action={sessions.length > 1 && (
+                <HomeLinkButton onClick={() => { setActiveTab('partidas'); setShowAllSessionsScreen(true); }}>
+                  Ver todas ({sessions.length})
+                </HomeLinkButton>
+              )}
+            >
+              <LatestSessionCard
+                data={latestSessionHighlights}
+                avatarProps={{ users, registeredPlayers, registeredGoleiros }}
+                onOpenSession={() => setActiveSessionId(sessions[0].id)}
+                onOpenPlayer={openPlayerByName}
+              />
+            </HomeSection>
           )}
 
-          <div className="main-actions-bar" style={{ marginBottom: '24px' }}>
-            <h3 style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 12, borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 6 }}>
-              Administração
-            </h3>
-            {isGlobalAdmin ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <button
-                  type="button"
-                  className="btn-primary"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '10px',
-                    background: 'linear-gradient(135deg, #00e65a 0%, #00b344 100%)',
-                    color: '#080c10',
-                    fontWeight: 800,
-                    padding: '12px 16px',
-                    borderRadius: '12px',
-                    cursor: 'pointer',
-                    border: 'none',
-                    boxShadow: '0 4px 14px rgba(0, 230, 90, 0.3)',
-                    fontSize: '14px'
-                  }}
-                  onClick={() => setShowTeamDrawModal(true)}
-                >
-                  <Shuffle size={18} />
-                  <span>🎲 Sorteio de Times por Estrelas</span>
-                </button>
-                <form className="input-group" onSubmit={handleAddSession} style={{ marginBottom: 0 }}>
-                  <input type="text" className="input-field" placeholder="Criar nova pelada..." value={newSessionName} onChange={(e) => setNewSessionName(e.target.value)} />
-                  <button type="submit" className="btn-primary" title="Criar Pelada"><Plus size={20} /></button>
-                </form>
-                <form className="input-group" onSubmit={handleRegisterPlayer} style={{ marginBottom: 0 }}>
-                  <input type="text" name="playerName" className="input-field" placeholder="Cadastrar novo jogador..." />
-                  <button type="submit" className="btn-primary" title="Cadastrar Jogador"><Users size={20} /></button>
-                </form>
-                <form className="input-group" onSubmit={handleRegisterGoleiro} style={{ marginBottom: 0 }}>
-                  <input type="text" name="goleiroName" className="input-field" placeholder="Cadastrar novo goleiro..." />
-                  <button type="submit" className="btn-primary" title="Cadastrar Goleiro"><Hand size={20} /></button>
-                </form>
-              </div>
-            ) : (
-              <div style={{ padding: '16px', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '10px', border: '1px dashed rgba(255,255,255,0.1)', textAlign: 'center', color: 'var(--text-muted)' }}>
-                Apenas Administradores podem criar peladas ou cadastrar jogadores/goleiros.
-              </div>
-            )}
-          </div>
+          {/* 2. Destaques do mês + Time do Mês */}
+          {allHighlights.length > 0 && (() => {
+            const hl = allHighlights[0];
 
-          {/* Easter Egg */}
-          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '40px', paddingBottom: '20px' }}>
-            <img src="/ditador.png" alt="O Ditador" style={{ width: '100px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }} />
-          </div>
+            const renderCard = (title, statObj, statKey, unit, cardId, infoText = null) => {
+              const val = statObj[statKey];
+              const hasMultiple = statObj.tied && statObj.tied.length > 1;
+              const isExp = expandedHighlights[cardId];
+              const canOpen = !hasMultiple && val > 0;
+              const unitFor = (v) => (typeof unit === 'function' ? unit(v) : unit);
+              const formatValue = (v) => (unitFor(v) === 'Nota' ? `Nota ${v.toFixed(2)}` : `${v} ${unitFor(v)}`);
+
+              return (
+                <div className="highlight-card" onClick={() => hasMultiple && toggleHighlight(cardId)} style={hasMultiple ? { cursor: 'pointer' } : {}}>
+                  <span className="hl-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span>{title}</span>
+                    {infoText && (
+                      <div onClick={(e) => toggleInfoTooltip(cardId, e)} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', opacity: 0.8, padding: '2px', marginLeft: 'auto' }}>
+                        <Info size={14} />
+                      </div>
+                    )}
+                  </span>
+
+                  {infoText && showInfoTooltip[cardId] && (
+                    <div className="animated" style={{ fontSize: 10, color: 'var(--text-muted)', backgroundColor: 'rgba(0,0,0,0.3)', padding: '6px', borderRadius: '4px', lineHeight: '1.3', marginBottom: 8 }}>
+                      {infoText}
+                    </div>
+                  )}
+
+                  <div className="hl-name" style={{ display: 'flex', flexDirection: hasMultiple ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', gap: hasMultiple ? 6 : 8, width: '100%', flexWrap: 'wrap' }}>
+                    {canOpen && (
+                      <PlayerAvatar users={users} registeredPlayers={registeredPlayers} registeredGoleiros={registeredGoleiros}
+                        playerName={statObj.name}
+                        size={24}
+                        onClick={() => openPlayerByName(statObj.name)}
+                      />
+                    )}
+                    <span
+                      className={canOpen ? 'hl-name-link' : undefined}
+                      style={{ textAlign: 'center', wordBreak: 'break-word', lineHeight: 1.3, cursor: canOpen ? 'pointer' : 'default' }}
+                      onClick={(e) => { if (canOpen) { e.stopPropagation(); openPlayerByName(statObj.name); } }}
+                      title={canOpen ? 'Ver perfil' : ''}
+                    >
+                      {val > 0 ? statObj.name : '-'}
+                    </span>
+                    {hasMultiple && val > 0 && (
+                      <span style={{ fontSize: 10, color: 'var(--primary)', backgroundColor: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.2)', padding: '2px 8px', borderRadius: '12px', fontWeight: 'bold' }}>
+                        {isExp ? 'Recolher' : 'Ver Todos'}
+                      </span>
+                    )}
+                  </div>
+                  <span className="hl-stat">{val > 0 ? formatValue(val) : '-'}</span>
+
+                  {hasMultiple && isExp && val > 0 && (
+                    <div style={{ marginTop: 12, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {statObj.tied.map((p, idx) => (
+                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-main)' }}>
+                          <span>{p.name}</span>
+                          <span style={{ color: 'var(--primary)', fontWeight: 'bold' }}>{formatValue(p[statKey])}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            };
+
+            return (
+              <HomeSection
+                icon={<Trophy size={16} />}
+                title="Destaques do Mês"
+                subtitle={hl.label}
+                action={allHighlights.length > 1 && (
+                  <HomeLinkButton onClick={() => setShowAllHighlightsScreen(true)}>Todos os meses</HomeLinkButton>
+                )}
+              >
+                <div className="highlights-grid">
+                  {renderCard('⚽ Artilheiro', hl.topScorer, 'goals', 'Gols', `art-${hl.monthKey}`)}
+                  {renderCard('🎯 Garçom', hl.topAssister, 'assists', 'Assist.', `ass-${hl.monthKey}`)}
+                  {renderCard('⭐ MVP', hl.mvp, 'mvpScore', 'Nota', `mvp-${hl.monthKey}`, 'Nota de 4 a 10: média do desempenho nas peladas deste mês.')}
+                  {renderCard('🏆 Decisivo', hl.topChamp, 'champWins', (v) => (v === 1 ? 'Pelada' : 'Peladas'), `chmp-${hl.monthKey}`)}
+                </div>
+
+                {hl.teamOfMonth && (
+                  <div className="soccer-field-container home-month-team">
+                    <h4 style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                      Time do Mês
+                    </h4>
+                    <div className="soccer-field">
+                      <div className="field-line field-center-line"></div>
+                      <div className="field-line field-center-circle"></div>
+                      <div className="field-line field-penalty-area-top"></div>
+                      <div className="field-line field-penalty-area-bottom"></div>
+                      {[
+                        { players: hl.teamOfMonth.atacantes, type: 'Atacante' },
+                        { players: hl.teamOfMonth.meias, type: 'Meia' },
+                        { players: hl.teamOfMonth.zagueiros, type: 'Zagueiro' }
+                      ].map(line => (
+                        <SoccerField
+                          key={line.type}
+                          users={users}
+                          players={line.players}
+                          type={line.type}
+                          sourceRatings={[]}
+                          isHighlights={true}
+                          registeredPlayers={registeredPlayers}
+                          registeredGoleiros={registeredGoleiros}
+                          onPlayerClick={(pObj) => {
+                            setViewingPlayerId(pObj.id);
+                            setShowProfile(true);
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </HomeSection>
+            );
+          })()}
+
+          {/* 3. Ranking geral (Top 5 + posição de quem está logado) */}
+          {sessions.length > 0 && (
+            <HomeSection
+              icon="📊"
+              title="Ranking Geral"
+              subtitle="Top 5 pela nota média"
+              action={(
+                <HomeLinkButton onClick={() => { setActiveTab('ranking'); setShowPlayersScreen(true); setShowMonthlyStatsScreen(false); }}>
+                  Ver completo
+                </HomeLinkButton>
+              )}
+            >
+              <RankingPreview
+                players={summaryRanking}
+                currentUserRanking={currentUserRanking}
+                avatarProps={{ users, registeredPlayers, registeredGoleiros }}
+                onOpenPlayer={(p) => { setViewingPlayerId(p.id); setShowProfile(true); }}
+              />
+            </HomeSection>
+          )}
+
         </main>
         {renderBottomNav()}
       </div>

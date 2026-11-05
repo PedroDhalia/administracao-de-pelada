@@ -40,6 +40,23 @@ export const compressImage = async (file) => {
     };
   });
 };
+export const getTeamColor = (teamName) => {
+  if (!teamName) return 'var(--primary)';
+  const lower = teamName.toLowerCase();
+  if (lower.includes('branco')) return '#ffffff';
+  if (lower.includes('preta') || lower.includes('preto')) return '#1a1a1a';
+  if (lower.includes('verde')) return '#22c55e';
+  if (lower.includes('azul')) return '#3b82f6';
+  if (lower.includes('vermelho')) return '#ef4444';
+  if (lower.includes('amarelo')) return '#eab308';
+  if (lower.includes('roxo')) return '#a855f7';
+  if (lower.includes('rosa')) return '#ec4899';
+  if (lower.includes('laranja')) return '#f97316';
+  if (lower.includes('cinza')) return '#9ca3af';
+  if (lower.includes('sem camisa') || lower.includes('colete')) return '#fcd34d';
+  return 'var(--primary)';
+};
+
 export const getNotaColor = (nota) => {
   if (nota >= 9.0) return '#30d158'; // Verde premium
   if (nota >= 8.0) return '#0084ff'; // Azul premium
